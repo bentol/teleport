@@ -237,10 +237,6 @@ func (s *SrvSuite) TestAdvertiseAddr(c *C) {
 // TestAgentForwardPermission makes sure if RBAC rules don't allow agent
 // forwarding, we don't start an agent even if requested.
 func (s *SrvSuite) TestAgentForwardPermission(c *C) {
-	se, err := s.clt.NewSession()
-	c.Assert(err, IsNil)
-	defer se.Close()
-
 	// make sure the role does not allow agent forwarding
 	roleName := services.RoleNameForUser(s.user)
 	role, err := s.a.GetRole(roleName)
@@ -250,6 +246,10 @@ func (s *SrvSuite) TestAgentForwardPermission(c *C) {
 	role.SetOptions(roleOptions)
 	err = s.a.UpsertRole(role, backend.Forever)
 	c.Assert(err, IsNil)
+
+	se, err := s.clt.NewSession()
+	c.Assert(err, IsNil)
+	defer se.Close()
 
 	// to interoperate with OpenSSH, requests for agent forwarding always succeed.
 	// however that does not mean the users agent will actually be forwarded.
