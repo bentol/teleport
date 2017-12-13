@@ -103,6 +103,8 @@ func (a *authorizer) Authorize(ctx context.Context) (*AuthContext, error) {
 		return a.authorizeRemoteUser(user)
 	case BuiltinRole:
 		return a.authorizeBuiltinRole(user)
+	case RemoteBuiltinRole:
+		return a.authorizeRemoteBuiltinRole(user)
 	default:
 		return nil, trace.AccessDenied("unsupported context type %T", userI)
 	}
@@ -141,6 +143,43 @@ func (a *authorizer) authorizeRemoteUser(u RemoteUser) (*AuthContext, error) {
 // authorizeBuiltinRole authorizes builtin role
 func (a *authorizer) authorizeBuiltinRole(r BuiltinRole) (*AuthContext, error) {
 	return contextForBuiltinRole(r.GetClusterConfig(), r.Role)
+}
+
+func (a *authorizer) authorizeRemoteBuiltinRole(r RemoteBuiltinRole) (*AuthContext, error) {
+	if r.Role != teleport.RoleProxy {
+		return nil, trace.AccessDenied("access denied for remote %v connecting to cluster", r.Role)
+	}
+	// TODO(klizhentas): allow remote proxy to update the cluster's certificate authorities
+	// during certificates renewal
+	roles, err := services.FromSpec(
+		"remote-"+r.Role.String(),
+		services.RoleSpecV3{
+			Allow: services.RoleConditions{
+				Namespaces: []string{services.Wildcard},
+				Rules: []services.Rule{
+					services.NewRule(services.KindNode, services.RO()),
+					services.NewRule(services.KindProxy, services.RO()),
+					services.NewRule(services.KindCertAuthority, services.ReadNoSecrets()),
+					services.NewRule(services.KindNamespace, services.RO()),
+					services.NewRule(services.KindUser, services.RO()),
+					services.NewRule(services.KindAuthServer, services.RO()),
+					services.NewRule(services.KindReverseTunnel, services.RO()),
+					services.NewRule(services.KindTunnelConnection, services.RO()),
+					services.NewRule(services.KindClusterConfig, services.RO()),
+				},
+			},
+		})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	user, err := services.NewUser(fmt.Sprintf("-%v", r.Role))
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &AuthContext{
+		User:    user,
+		Checker: roles,
+	}, nil
 }
 
 // GetCheckerForBuiltinRole returns checkers for embedded builtin role
@@ -349,6 +388,13 @@ type BuiltinRole struct {
 	GetClusterConfig GetClusterConfigFunc
 
 	// Role is the builtin role this username is associated with
+	Role teleport.Role
+}
+
+// RemoteBuiltinRole is the role of the remote (service connecting via trusted cluster link)
+// Teleport service.
+type RemoteBuiltinRole struct {
+	// Role is the builtin role of the user
 	Role teleport.Role
 }
 

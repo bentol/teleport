@@ -189,6 +189,27 @@ type CertAuthority interface {
 	GetTLSKeyPairs() []TLSKeyPair
 }
 
+// CertPoolFromCertAuthorities returns certificate pools from TLS certificates
+// set up in the certificate authorities list
+func CertPoolFromCertAuthorities(cas []CertAuthority) (*x509.CertPool, error) {
+	certPool := x509.NewCertPool()
+	for _, ca := range cas {
+		keyPairs := ca.GetTLSKeyPairs()
+		if len(keyPairs) == 0 {
+			continue
+		}
+		for _, keyPair := range keyPairs {
+			cert, err := tlsca.ParseCertificatePEM(keyPair.Cert)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			certPool.AddCert(cert)
+		}
+		return certPool, nil
+	}
+	return certPool, nil
+}
+
 // CertPool returns certificate pools from TLS certificates
 // set up in the certificate authority
 func CertPool(ca CertAuthority) (*x509.CertPool, error) {

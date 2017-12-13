@@ -19,6 +19,7 @@ package web
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"net"
 	"net/http"
@@ -220,18 +221,33 @@ func (c *SessionContext) tryRemoteTLSClient(cluster reversetunnel.RemoteSite) (a
 	return clt, nil
 }
 
-func (c *SessionContext) newRemoteTLSClient(cluster reversetunnel.RemoteSite) (auth.ClientI, error) {
-	ca, err := c.parent.proxyClient.GetCertAuthority(services.CertAuthID{
-		Type:       services.HostCA,
-		DomainName: cluster.GetName(),
-	}, false)
-	if err != nil {
-		return nil, trace.Wrap(err)
+// ClientTLSConfig returns client TLS authentication associated
+// with the web session context
+func (c *SessionContext) ClientTLSConfig(clusterName ...string) (*tls.Config, error) {
+	var certPool *x509.CertPool
+	if len(clusterName) == 0 {
+		certAuthorities, err := c.parent.proxyClient.GetCertAuthorities(services.HostCA, false)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		certPool, err = services.CertPoolFromCertAuthorities(certAuthorities)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+	} else {
+		certAuthority, err := c.parent.proxyClient.GetCertAuthority(services.CertAuthID{
+			Type:       services.HostCA,
+			DomainName: clusterName[0],
+		}, false)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		certPool, err = services.CertPool(certAuthority)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
 	}
-	certPool, err := services.CertPool(ca)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+
 	tlsConfig := utils.TLSConfig()
 	tlsCert, err := tls.X509KeyPair(c.sess.GetTLSCert(), c.sess.GetPriv())
 	if err != nil {
@@ -239,6 +255,14 @@ func (c *SessionContext) newRemoteTLSClient(cluster reversetunnel.RemoteSite) (a
 	}
 	tlsConfig.Certificates = []tls.Certificate{tlsCert}
 	tlsConfig.RootCAs = certPool
+	return tlsConfig, nil
+}
+
+func (c *SessionContext) newRemoteTLSClient(cluster reversetunnel.RemoteSite) (auth.ClientI, error) {
+	tlsConfig, err := c.ClientTLSConfig(cluster.GetName())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return auth.NewTLSClientWithDialer(clusterDialer(cluster), tlsConfig)
 }
 

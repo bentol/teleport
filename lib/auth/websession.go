@@ -2,21 +2,17 @@ package auth
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/gravitational/teleport"
-	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/gravitational/trace"
-	"github.com/pborman/uuid"
 	"github.com/tstranex/u2f"
 )
 
@@ -237,47 +233,14 @@ func (s *AuthServer) AuthenticateSSHUser(req AuthenticateSSHRequest) (*SSHLoginR
 	}, nil
 }
 
-// CreateCertExchange initiates certificate exchange operation, if successfull,
-// returns a token encrypted by certificate authority public key
-// in SSH authorized_keys format
-func (s *AuthServer) CreateCertExchange(publicKeyBytes []byte) (string, error) {
-	ca, err := s.findCertAuthorityByPublicKey(publicKeyBytes)
-	if err != nil {
-		return "", trace.AccessDenied("unrecognized public key")
-	}
-
-	token := uuid.New()
-	encryptedToken, err := EncryptWithSSHPublicKey(ca.GetCheckingKeys()[0], []byte(token), []byte("kex"))
-	if err != nil {
-		log.Warningf("failed to create key exchange: %v", trace.DebugReport(err))
-		return "", trace.AccessDenied("internal error kex[01]")
-	}
-
-	certExchangeToken := services.CertExchangeToken{
-		Metadata: services.Metadata{
-			Name: token,
-		},
-		ClusterName: ca.GetName(),
-	}
-	certExchangeToken.Metadata.SetExpiry(s.clock.Now().Add(defaults.InviteTokenTTL))
-
-	err = s.Identity.CreateCertExchangeToken(certExchangeToken)
-	if err != nil {
-		log.Warningf("failed to create cert exchange: %v", trace.DebugReport(err))
-		return "", trace.AccessDenied("internal error kex[02]")
-	}
-
-	return *encryptedToken, nil
+type ExchangeCertsRequest struct {
+	PublicKey []byte `json:"public_key"`
+	TLSCert   []byte `json:"tls_cert"`
 }
 
-type CertExchangeRequest struct {
-	Token   string `json:"token"`
-	TLSCert []byte `json:"tls_cert"`
-}
-
-func (req *CertExchangeRequest) CheckAndSetDefaults() error {
-	if req.Token == "" {
-		return trace.BadParameter("missing parameter 'token'")
+func (req *ExchangeCertsRequest) CheckAndSetDefaults() error {
+	if len(req.PublicKey) == 0 {
+		return trace.BadParameter("missing parameter 'public_key'")
 	}
 	if len(req.TLSCert) == 0 {
 		return trace.BadParameter("missing parameter 'tls_cert'")
@@ -285,28 +248,37 @@ func (req *CertExchangeRequest) CheckAndSetDefaults() error {
 	return nil
 }
 
-type CertExchangeResponse struct {
+type ExchangeCertsResponse struct {
 	TLSCert []byte `json:"tls_cert"`
 }
 
-func (s *AuthServer) CompleteCertExchange(req CertExchangeRequest) (*CertExchangeResponse, error) {
+func (s *AuthServer) ExchangeCerts(req ExchangeCertsRequest) (*ExchangeCertsResponse, error) {
 	if err := req.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
-	token, err := s.Identity.GetCertExchangeToken(req.Token)
-	if err != nil {
-		log.Warningf("failed to get token: %v", err)
-		return nil, trace.AccessDenied("access denied: bad authentication token")
+
+	if err := req.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
 	}
 
-	// token is one time, even though the code below can fail,
-	// client will have to create new exchange operation
-	err = s.Identity.DeleteCertExchangeToken(req.Token)
+	remoteCA, err := s.findCertAuthorityByPublicKey(req.PublicKey)
 	if err != nil {
-		if !trace.IsNotFound(err) {
-			log.Warningf("failed to get token: %v", err)
-			return nil, trace.AccessDenied("access denied: bad authentication token")
-		}
+		return nil, trace.Wrap(err)
+	}
+
+	if err := CheckPublicKeysEqual(req.PublicKey, req.TLSCert); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	remoteCA.SetTLSKeyPairs([]services.TLSKeyPair{
+		{
+			Cert: req.TLSCert,
+		},
+	})
+
+	err = s.UpsertCertAuthority(remoteCA)
+	if err != nil {
+		return nil, trace.Wrap(err)
 	}
 
 	clusterName, err := s.GetClusterName()
@@ -319,25 +291,10 @@ func (s *AuthServer) CompleteCertExchange(req CertExchangeRequest) (*CertExchang
 		return nil, trace.Wrap(err)
 	}
 
-	trustedClusterCA, err := s.GetCertAuthority(services.CertAuthID{Type: services.HostCA, DomainName: token.ClusterName}, false)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	trustedClusterCA.SetTLSKeyPairs([]services.TLSKeyPair{
-		{
-			Cert: req.TLSCert,
-		},
-	})
-
-	err = s.UpsertCertAuthority(trustedClusterCA)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	return &CertExchangeResponse{
+	return &ExchangeCertsResponse{
 		TLSCert: thisHostCA.GetTLSKeyPairs()[0].Cert,
 	}, nil
+
 }
 
 func (s *AuthServer) findCertAuthorityByPublicKey(publicKey []byte) (services.CertAuthority, error) {
@@ -355,57 +312,35 @@ func (s *AuthServer) findCertAuthorityByPublicKey(publicKey []byte) (services.Ce
 	return nil, trace.NotFound("certificate authority with public key is not found")
 }
 
-func EncryptWithSSHPublicKey(publicKeyBytes []byte, message []byte, label []byte) (*string, error) {
-	publicKey, _, _, _, err := ssh.ParseAuthorizedKey(publicKeyBytes)
+// CheckPublicKeysEqual compares RSA based SSH public key with the public
+// key in the TLS certificate, returns nil if keys are equal, error otherwise
+func CheckPublicKeysEqual(sshKeyBytes []byte, certBytes []byte) error {
+	cert, err := tlsca.ParseCertificatePEM(certBytes)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
+	}
+	certPublicKey, ok := cert.PublicKey.(rsa.PublicKey)
+	if !ok {
+		return trace.BadParameter("expected RSA public key, got %T", cert.PublicKey)
+	}
+
+	publicKey, _, _, _, err := ssh.ParseAuthorizedKey(sshKeyBytes)
+	if err != nil {
+		return trace.Wrap(err)
 	}
 	cryptoPubKey, ok := publicKey.(ssh.CryptoPublicKey)
 	if !ok {
-		return nil, trace.BadParameter("unexpected key type: %T", publicKey)
+		return trace.BadParameter("unexpected key type: %T", publicKey)
 	}
 	rsaPublicKey, ok := cryptoPubKey.CryptoPublicKey().(rsa.PublicKey)
 	if !ok {
-		return nil, trace.BadParameter("unexpected key type: %T", publicKey)
+		return trace.BadParameter("unexpected key type: %T", publicKey)
 	}
-
-	// crypto/rand.Reader is a good source of entropy for randomizing the
-	// encryption function.
-	rng := rand.Reader
-
-	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rng, &rsaPublicKey, message, label)
-	if err != nil {
-		return nil, trace.Wrap(err)
+	if certPublicKey.E != rsaPublicKey.E {
+		return trace.CompareFailed("different public keys")
 	}
-
-	encoded := base64.StdEncoding.EncodeToString(ciphertext)
-	return &encoded, nil
-}
-
-func DecryptWithSSHPrivateKey(ciphertext string, privateKeyBytes []byte, label []byte) (*string, error) {
-	cipherBytes, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return nil, trace.Wrap(err)
+	if certPublicKey.N.Cmp(rsaPublicKey.N) != 0 {
+		return trace.CompareFailed("different public keys")
 	}
-
-	privateKey, err := ssh.ParseRawPrivateKey(privateKeyBytes)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
-	if !ok {
-		return nil, trace.BadParameter("expected RSA private key, got %v", privateKey)
-	}
-
-	// crypto/rand.Reader is a good source of entropy for blinding the RSA
-	// operation.
-	rng := rand.Reader
-
-	plainBytes, err := rsa.DecryptOAEP(sha256.New(), rng, rsaPrivateKey, cipherBytes, label)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	plainText := string(plainBytes)
-
-	return &plainText, nil
+	return nil
 }

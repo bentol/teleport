@@ -847,6 +847,23 @@ func (c *Client) CreateWebSession(user string) (services.WebSession, error) {
 	return services.GetWebSessionMarshaler().UnmarshalWebSession(out.Bytes())
 }
 
+// DELETE IN: 2.5.0
+// ExchangeCerts exchanges TLS certificates for established host certificate authorities
+func (c *Client) ExchangeCerts(req ExchangeCertsRequest) (*ExchangeCertsResponse, error) {
+	out, err := c.PostJSON(
+		c.Endpoint("exchangecerts"),
+		req,
+	)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	var re ExchangeCertsResponse
+	if err := json.Unmarshal(out.Bytes(), &re); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &re, nil
+}
+
 // AuthenticateWebUser authenticates web user, creates and  returns web session
 // in case if authentication is successfull
 func (c *Client) AuthenticateWebUser(req AuthenticateUserRequest) (services.WebSession, error) {
@@ -2020,4 +2037,8 @@ type ClientI interface {
 	// AuthenticateSSHUser authenticates SSH console user, creates and  returns a pair of signed TLS and SSH
 	// short lived certificates as a result
 	AuthenticateSSHUser(req AuthenticateSSHRequest) (*SSHLoginResponse, error)
+
+	// DELETE IN: 2.5.0
+	// ExchangeCerts exchanges TLS certificates between host certificate authorities of trusted clusters
+	ExchangeCerts(req ExchangeCertsRequest) (*ExchangeCertsResponse, error)
 }

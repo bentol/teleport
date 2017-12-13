@@ -823,9 +823,16 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 		return trace.Wrap(err)
 	}
 
+	tlsConfig, err := conn.Identity.TLSConfig()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	tsrv, err := reversetunnel.NewServer(
 		reversetunnel.Config{
 			ID:                    process.Config.HostUUID,
+			ClusterName:           conn.Identity.Cert.Extensions[utils.CertExtensionAuthority],
+			ClientTLS:             tlsConfig,
 			ListenAddr:            cfg.Proxy.ReverseTunnelListenAddr,
 			HostSigners:           []ssh.Signer{conn.Identity.KeySigner},
 			LocalAuthClient:       conn.Client,

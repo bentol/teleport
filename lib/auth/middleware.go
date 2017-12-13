@@ -6,10 +6,10 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/limiter"
 	"github.com/gravitational/teleport/lib/tlsca"
 
-	"github.com/gravitational/teleport"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -153,8 +153,10 @@ func (a *AuthMiddleware) GetUser(r *http.Request) (interface{}, error) {
 		// to get unrestricted access to the local cluster
 		systemRole := findSystemRole(identity.Groups)
 		if systemRole != nil {
-			log.Warningf("Trusted Cluster %q attempted to get access with system role %v!", certClusterName, *systemRole)
-			return nil, trace.AccessDenied("unsupported role %q for remote user", *systemRole)
+			log.WithFields(logrus.Fields{"type": "remote-builtin", "roles": identity.Groups, "cluster": certClusterName}).Debug("Authenticated user.")
+			return RemoteBuiltinRole{
+				Role: *systemRole,
+			}, nil
 		}
 		log.WithFields(logrus.Fields{"user": identity.Username, "type": "remote", "roles": identity.Groups, "cluster": certClusterName}).Debug("Authenticated user.")
 		return RemoteUser{

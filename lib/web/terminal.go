@@ -173,12 +173,20 @@ func (t *TerminalHandler) Run(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		tlsConfig, err := t.ctx.ClientTLSConfig()
+		if err != nil {
+			log.Warningf("failed to get client TLS config: %v", err)
+			errToTerm(err, ws)
+			return
+		}
+
 		// create teleport client:
 		output := utils.NewWebSockWrapper(ws, utils.WebSocketTextMode)
 		clientConfig := &client.Config{
 			SkipLocalAuth:    true,
 			ForwardAgent:     true,
 			Agent:            agent,
+			TLS:              tlsConfig,
 			AuthMethods:      []ssh.AuthMethod{ssh.PublicKeys(signers...)},
 			DefaultPrincipal: cert.ValidPrincipals[0],
 			HostLogin:        t.params.Login,
