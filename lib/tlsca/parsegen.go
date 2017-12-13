@@ -25,11 +25,7 @@ func GenerateRSAPrivateKeyPEM() ([]byte, error) {
 }
 
 // GenerateSelfSignedCA generates self-signed certificate authority used for internal inter-node communications
-func GenerateSelfSignedCA(entity pkix.Name, dnsNames []string, ttl time.Duration) ([]byte, []byte, error) {
-	priv, err := rsa.GenerateKey(rand.Reader, defaults.RSABits)
-	if err != nil {
-		return nil, nil, trace.Wrap(err)
-	}
+func GenerateSelfSignedCAWithPrivateKey(priv *rsa.PrivateKey, entity pkix.Name, dnsNames []string, ttl time.Duration) ([]byte, []byte, error) {
 	notBefore := time.Now()
 	notAfter := notBefore.Add(ttl)
 
@@ -60,6 +56,15 @@ func GenerateSelfSignedCA(entity pkix.Name, dnsNames []string, ttl time.Duration
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 
 	return keyPEM, certPEM, nil
+}
+
+// GenerateSelfSignedCA generates self-signed certificate authority used for internal inter-node communications
+func GenerateSelfSignedCA(entity pkix.Name, dnsNames []string, ttl time.Duration) ([]byte, []byte, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, defaults.RSABits)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	return GenerateSelfSignedCAWithPrivateKey(priv, entity, dnsNames, ttl)
 }
 
 // ParseCertificateRequestPEM parses PEM-encoded certificate signing request

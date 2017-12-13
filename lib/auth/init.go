@@ -17,6 +17,7 @@ limitations under the License.
 package auth
 
 import (
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -308,7 +309,15 @@ func Init(cfg InitConfig, opts ...AuthServerOption) (*AuthServer, *Identity, err
 		}
 	} else if len(hostCA.GetTLSKeyPairs()) == 0 {
 		log.Infof("Migrate: generating TLS CA for existing host CA.")
-		keyPEM, certPEM, err := tlsca.GenerateSelfSignedCA(pkix.Name{
+		privateKey, err := ssh.ParseRawPrivateKey(hostCA.GetSigningKeys()[0])
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+		privateKeyRSA, ok := privateKey.(*rsa.PrivateKey)
+		if !ok {
+			return nil, nil, trace.BadParameter("expected RSA private key, got %T", privateKey)
+		}
+		keyPEM, certPEM, err := tlsca.GenerateSelfSignedCAWithPrivateKey(privateKeyRSA, pkix.Name{
 			CommonName:   cfg.ClusterName.GetClusterName(),
 			Organization: []string{cfg.ClusterName.GetClusterName()},
 		}, nil, defaults.CATTL)

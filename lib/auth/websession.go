@@ -319,7 +319,7 @@ func CheckPublicKeysEqual(sshKeyBytes []byte, certBytes []byte) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	certPublicKey, ok := cert.PublicKey.(rsa.PublicKey)
+	certPublicKey, ok := cert.PublicKey.(*rsa.PublicKey)
 	if !ok {
 		return trace.BadParameter("expected RSA public key, got %T", cert.PublicKey)
 	}
@@ -332,7 +332,7 @@ func CheckPublicKeysEqual(sshKeyBytes []byte, certBytes []byte) error {
 	if !ok {
 		return trace.BadParameter("unexpected key type: %T", publicKey)
 	}
-	rsaPublicKey, ok := cryptoPubKey.CryptoPublicKey().(rsa.PublicKey)
+	rsaPublicKey, ok := cryptoPubKey.CryptoPublicKey().(*rsa.PublicKey)
 	if !ok {
 		return trace.BadParameter("unexpected key type: %T", publicKey)
 	}

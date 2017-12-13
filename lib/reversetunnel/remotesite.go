@@ -340,11 +340,11 @@ func (s *remoteSite) attemptCertExchange() error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	if err := auth.CheckPublicKeysEqual(remoteCA.GetCheckingKeys()[0], re.TLSCert); err != nil {
-		return trace.Wrap(err)
-	}
-	remoteCA.SetTLSKeyPairs([]services.TLSKeyPair{{Cert: re.TLSCert}})
-	return s.localClient.UpsertCertAuthority(remoteCA)
+	_, err = s.localClient.ExchangeCerts(auth.ExchangeCertsRequest{
+		PublicKey: remoteCA.GetCheckingKeys()[0],
+		TLSCert:   re.TLSCert,
+	})
+	return err
 }
 
 func (s *remoteSite) periodicAttemptCertExchange() {

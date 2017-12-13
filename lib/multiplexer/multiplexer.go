@@ -186,14 +186,14 @@ func (m *Mux) detectAndForward(conn net.Conn) {
 	}
 	connWrapper, err := detect(conn)
 	if err != nil {
-		m.Warning(err.Error())
+		m.Warning(trace.DebugReport(err))
 		conn.Close()
 		return
 	}
 
 	err = conn.SetReadDeadline(time.Time{})
 	if err != nil {
-		m.Warning(err.Error())
+		m.Warning(trace.DebugReport(err))
 		conn.Close()
 		return
 	}
@@ -290,6 +290,6 @@ func detectProto(in []byte) (int, error) {
 	case bytes.HasPrefix(in, tlsPrefix):
 		return ProtoTLS, nil
 	default:
-		return ProtoUnknown, trace.BadParameter("failed to detect protocol")
+		return ProtoUnknown, trace.BadParameter("failed to detect protocol by prefix: %v", in)
 	}
 }

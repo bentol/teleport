@@ -308,6 +308,7 @@ func (a *Agent) proxyAccessPoint(ch ssh.Channel, req <-chan *ssh.Request) {
 	a.Debugf("proxyAccessPoint")
 	defer ch.Close()
 
+	// shall terminate TLS
 	conn, err := a.Client.GetDialer()(context.TODO())
 	if err != nil {
 		a.Warningf("error dialing: %v", err)

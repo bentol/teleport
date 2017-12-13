@@ -62,6 +62,7 @@ type Dialer func(network, addr string) (net.Conn, error)
 // tunnel first, and then do HTTP-over-SSH. This client is wrapped by auth.TunClient
 // in lib/auth/tun.go
 type Client struct {
+	tlsConfig   *tls.Config
 	dialContext DialContext
 	roundtrip.Client
 	transport *http.Transport
@@ -93,6 +94,7 @@ func NewAddrDialer(addrs []utils.NetAddr) DialContext {
 // NewTLSClientWithDialer returns new TLS client that uses mutual TLS authenticate
 // and dials the remote server using dialer
 func NewTLSClientWithDialer(dialContext DialContext, cfg *tls.Config, params ...roundtrip.ClientParam) (*Client, error) {
+	cfg.ServerName = teleport.APIDomain
 	transport := &http.Transport{
 		// notice that below roundtrip.Client is passed
 		// teleport.APIEndpoint as an address for the API server, this is
@@ -118,6 +120,7 @@ func NewTLSClientWithDialer(dialContext DialContext, cfg *tls.Config, params ...
 		return nil, trace.Wrap(err)
 	}
 	return &Client{
+		tlsConfig:   cfg,
 		dialContext: dialContext,
 		Client:      *roundtripClient,
 		transport:   transport,
@@ -162,7 +165,11 @@ func NewClient(addr string, dialer Dialer, params ...roundtrip.ClientParam) (*Cl
 // GetDialer returns dialer that will connect to auth server API
 func (c *Client) GetDialer() AccessPointDialer {
 	return func(ctx context.Context) (conn net.Conn, err error) {
-		return c.dialContext(ctx, "tcp", teleport.APIDomain)
+		conn, err = c.dialContext(ctx, "tcp", teleport.APIDomain)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return tls.Client(conn, c.tlsConfig), nil
 	}
 }
 

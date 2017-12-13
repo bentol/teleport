@@ -33,6 +33,7 @@ services:
     env_file: env.file
     mem_limit: 300m
     volumes:
+      - ./data/one-node:/var/lib/teleport
       - ../:/root/go/src/github.com/gravitational/teleport
     networks:
       teleport:
