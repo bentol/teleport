@@ -50,9 +50,11 @@ func Register(dataDir, token string, id IdentityID, servers []utils.NetAddr) err
 		return trace.Wrap(err)
 	}
 	tlsConfig := utils.TLSConfig()
-	certPath := filepath.Join(defaults.CACertFile)
+	certPath := filepath.Join(dataDir, defaults.CACertFile)
 	certBytes, err := utils.ReadPath(certPath)
 	if err != nil {
+		// DELETE IN: 2.5.0
+		// Only support secure cluster joins in the next releases
 		if !trace.IsNotFound(err) {
 			return trace.Wrap(err)
 		}
@@ -64,6 +66,7 @@ func Register(dataDir, token string, id IdentityID, servers []utils.NetAddr) err
 		if err != nil {
 			return trace.Wrap(err, "failed to parse certificate at %v", certPath)
 		}
+		log.Infof("Securely joining remote cluster %v.", cert.Subject.CommonName)
 		certPool := x509.NewCertPool()
 		certPool.AddCert(cert)
 		tlsConfig.RootCAs = certPool
@@ -86,8 +89,12 @@ func Register(dataDir, token string, id IdentityID, servers []utils.NetAddr) err
 // ReRegister renews the certificates  and private keys based on the existing
 // identity ID
 func ReRegister(dataDir string, clt ClientI, id IdentityID) error {
+	hostID, err := id.HostID()
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	keys, err := clt.GenerateServerKeys(
-		id.HostUUID, id.NodeName, teleport.Roles{id.Role})
+		hostID, id.NodeName, teleport.Roles{id.Role})
 	if err != nil {
 		return trace.Wrap(err)
 	}

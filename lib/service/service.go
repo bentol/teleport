@@ -180,7 +180,7 @@ func (process *TeleportProcess) GetIdentity(role teleport.Role) (i *auth.Identit
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
-			log.Infof("found static identity %v in the config file, writing to disk", &id)
+			log.Infof("Found static identity %v in the config file, writing to disk.", &id)
 			if err = auth.WriteIdentity(process.Config.DataDir, i); err != nil {
 				return nil, trace.Wrap(err)
 			}
@@ -205,11 +205,11 @@ func (process *TeleportProcess) connectToAuthService(role teleport.Role) (*Conne
 			return nil, trace.Wrap(err)
 		}
 		// connect using legacy SSH and get new set of TLS credentials
-		log.Infof("connecting to the cluster to fetch TLS certificates")
 		storage := utils.NewFileAddrStorage(
 			filepath.Join(process.Config.DataDir, "authservers.json"))
 
 		authUser := identity.Cert.ValidPrincipals[0]
+		log.Infof("Connecting to the cluster as %v to fetch TLS certificates.", authUser)
 		authClient, err := auth.NewTunClient(
 			string(role),
 			process.Config.AuthServers,
@@ -232,7 +232,7 @@ func (process *TeleportProcess) connectToAuthService(role teleport.Role) (*Conne
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		log.Infof("received new TLS identity")
+		log.WithFields(logrus.Fields{"host": identity.ID.HostUUID, "role": identity.ID.Role}).Infof("Received new TLS identity.")
 	}
 	client, err := auth.NewTLSClient(process.Config.AuthServers, tlsConfig)
 	if err != nil {
@@ -249,7 +249,7 @@ func NewTeleport(cfg *Config) (*TeleportProcess, error) {
 	utils.ResetInterruptSignalHandler()
 
 	if err := validateConfig(cfg); err != nil {
-		return nil, trace.Wrap(err, "Configuration error")
+		return nil, trace.Wrap(err, "configuration error")
 	}
 
 	// create the data directory if it's missing
@@ -470,8 +470,12 @@ func (process *TeleportProcess) initAuthService(authority auth.Authority) error 
 		log.Debugf("Closing listener: %v.", listener.Addr())
 		listener.Close()
 	})
+	if cfg.Proxy.EnableProxyProtocol {
+		log.Infof("Starting Proxy with PROXY protocol support.")
+	}
 	mux, err := multiplexer.New(multiplexer.Config{
-		Listener: listener,
+		EnableProxyProtocol: cfg.Proxy.EnableProxyProtocol,
+		Listener:            listener,
 	})
 	if err != nil {
 		return trace.Wrap(err)

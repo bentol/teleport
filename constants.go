@@ -176,6 +176,12 @@ const (
 	// FileMaskOwnerOnly is the file mask that allows read write access
 	// to owers only
 	FileMaskOwnerOnly = 0600
+
+	// On means mode is on
+	On = "on"
+
+	// Off means mode is off
+	Off = "off"
 )
 
 const (

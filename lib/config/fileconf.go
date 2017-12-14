@@ -47,6 +47,7 @@ var (
 	// true  = has sub-keys
 	// false = does not have sub-keys (a leaf)
 	validKeys = map[string]bool{
+		"proxy_protocol":         false,
 		"namespace":              true,
 		"cluster_name":           true,
 		"trusted_clusters":       true,
@@ -649,12 +650,24 @@ type CommandLabel struct {
 
 // Proxy is `proxy_service` section of the config file:
 type Proxy struct {
-	Service    `yaml:",inline"`
-	WebAddr    string `yaml:"web_listen_addr,omitempty"`
-	TunAddr    string `yaml:"tunnel_listen_addr,omitempty"`
-	KeyFile    string `yaml:"https_key_file,omitempty"`
-	CertFile   string `yaml:"https_cert_file,omitempty"`
-	PublicAddr string `yaml:"public_addr,omitempty"`
+	Service       `yaml:",inline"`
+	ProxyProtocol string `yaml:"proxy_protocol,omitempty"`
+	WebAddr       string `yaml:"web_listen_addr,omitempty"`
+	TunAddr       string `yaml:"tunnel_listen_addr,omitempty"`
+	KeyFile       string `yaml:"https_key_file,omitempty"`
+	CertFile      string `yaml:"https_cert_file,omitempty"`
+	PublicAddr    string `yaml:"public_addr,omitempty"`
+}
+
+func (p *Proxy) ProxyProtocolEnabled() (bool, error) {
+	switch p.ProxyProtocol {
+	case teleport.On:
+		return true, nil
+	case teleport.Off, "":
+		return false, nil
+	default:
+		return false, trace.BadParameter("bad parameter for 'proxy_protocol': %q, supported values are on or off", p.ProxyProtocol)
+	}
 }
 
 // ReverseTunnel is a SSH reverse tunnel maintained by one cluster's

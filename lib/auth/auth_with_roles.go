@@ -234,7 +234,7 @@ func (a *AuthWithRoles) GenerateServerKeys(hostID string, nodeName string, roles
 	}
 	// username is hostID + cluster name, so make sure server requests new keys for itself
 	if a.user.GetName() != fmt.Sprintf("%v.%v", hostID, clusterName) {
-		return nil, trace.AccessDenied("username mistmatch %q", a.user.GetName())
+		return nil, trace.AccessDenied("username mismatch %q and %q", a.user.GetName(), fmt.Sprintf("%v.%v", hostID, clusterName))
 	}
 	existingRoles, err := teleport.NewRoles(a.user.GetRoles())
 	if err != nil {
@@ -242,7 +242,7 @@ func (a *AuthWithRoles) GenerateServerKeys(hostID string, nodeName string, roles
 	}
 	// prohibit privilege escalations through role changes
 	if !existingRoles.Equals(roles) {
-		return nil, trace.AccessDenied("roles do not match")
+		return nil, trace.AccessDenied("roles do not match: %v and %v", existingRoles, roles)
 	}
 	return a.authServer.GenerateServerKeys(hostID, nodeName, roles)
 }

@@ -559,6 +559,15 @@ type IdentityID struct {
 	NodeName string
 }
 
+// HostID is a host ID part of the host UUID that consists cluster name
+func (id *IdentityID) HostID() (string, error) {
+	parts := strings.Split(id.HostUUID, ".")
+	if len(parts) < 2 {
+		return "", trace.BadParameter("expected 2 parts in %v", id.HostUUID)
+	}
+	return parts[0], nil
+}
+
 // Equals returns true if two identities are equal
 func (id *IdentityID) Equals(other IdentityID) bool {
 	return id.Role == other.Role && id.HostUUID == other.HostUUID
@@ -730,7 +739,9 @@ func ReadIdentity(dataDir string, id IdentityID) (i *Identity, err error) {
 
 	tlsCACertBytes, err := utils.ReadPath(path.tlsCACert)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		if !trace.IsNotFound(err) {
+			return nil, trace.Wrap(err)
+		}
 	}
 
 	return ReadIdentityFromKeyPair(keyBytes, sshCertBytes, tlsCertBytes, tlsCACertBytes)

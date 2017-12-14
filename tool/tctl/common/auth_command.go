@@ -108,9 +108,9 @@ func (a *AuthCommand) ExportAuthorities(client auth.ClientI) error {
 		}
 		keyPair := certAuthority.GetTLSKeyPairs()[0]
 		if a.exportPrivateKeys {
-			fmt.Println(keyPair.Key)
+			fmt.Println(string(keyPair.Key))
 		}
-		fmt.Println(keyPair.Cert)
+		fmt.Println(string(keyPair.Cert))
 		return nil
 	}
 

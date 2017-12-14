@@ -261,6 +261,10 @@ func ApplyFileConfig(fc *FileConfig, cfg *service.Config) error {
 	}
 
 	// apply "proxy_service" section
+	cfg.Proxy.EnableProxyProtocol, err = fc.Proxy.ProxyProtocolEnabled()
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	if fc.Proxy.ListenAddress != "" {
 		addr, err := utils.ParseHostPortAddr(fc.Proxy.ListenAddress, int(defaults.SSHProxyListenPort))
 		if err != nil {

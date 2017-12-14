@@ -50,6 +50,8 @@ const (
 	// RoleNop is used for actions that already using external authz mechanisms
 	// e.g. tokens or passwords
 	RoleNop Role = "Nop"
+	// RoleRemoteProxy is a role for remote SSH proxy in the cluster
+	RoleRemoteProxy Role = "RemoteProxy"
 )
 
 // this constant exists for backwards compatibility reasons, needed to upgrade to 2.3

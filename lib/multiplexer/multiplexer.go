@@ -50,6 +50,8 @@ type Config struct {
 	// Clock is a clock to override in tests, set to real time clock
 	// by default
 	Clock clockwork.Clock
+	// EnableProxyProtocol enables proxy protocol
+	EnableProxyProtocol bool
 }
 
 // CheckAndSetDefaults verifies configuration and sets defaults
@@ -184,7 +186,7 @@ func (m *Mux) detectAndForward(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	connWrapper, err := detect(conn)
+	connWrapper, err := detect(conn, m.EnableProxyProtocol)
 	if err != nil {
 		m.Warning(trace.DebugReport(err))
 		conn.Close()
@@ -220,7 +222,7 @@ func (m *Mux) detectAndForward(conn net.Conn) {
 	}
 }
 
-func detect(conn net.Conn) (*Conn, error) {
+func detect(conn net.Conn, enableProxyProtocol bool) (*Conn, error) {
 	reader := bufio.NewReader(conn)
 
 	// the first attempt is to parse optional proxy
@@ -242,6 +244,9 @@ func detect(conn net.Conn) (*Conn, error) {
 
 		switch proto {
 		case ProtoProxy:
+			if !enableProxyProtocol {
+				return nil, trace.BadParameter("proxy protocol support is disabled")
+			}
 			if proxyLine != nil {
 				return nil, trace.BadParameter("duplicate proxy line")
 			}

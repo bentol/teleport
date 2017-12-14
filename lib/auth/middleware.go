@@ -125,6 +125,7 @@ func (a *AuthMiddleware) GetUser(r *http.Request) (interface{}, error) {
 		return BuiltinRole{
 			GetClusterConfig: a.AuthServer.getCachedClusterConfig,
 			Role:             teleport.RoleNop,
+			Username:         string(teleport.RoleNop),
 		}, nil
 	}
 	clientCert := peers[0]
@@ -155,7 +156,9 @@ func (a *AuthMiddleware) GetUser(r *http.Request) (interface{}, error) {
 		if systemRole != nil {
 			log.WithFields(logrus.Fields{"type": "remote-builtin", "roles": identity.Groups, "cluster": certClusterName}).Debug("Authenticated user.")
 			return RemoteBuiltinRole{
-				Role: *systemRole,
+				Role:        *systemRole,
+				Username:    identity.Username,
+				ClusterName: certClusterName,
 			}, nil
 		}
 		log.WithFields(logrus.Fields{"user": identity.Username, "type": "remote", "roles": identity.Groups, "cluster": certClusterName}).Debug("Authenticated user.")
@@ -176,6 +179,7 @@ func (a *AuthMiddleware) GetUser(r *http.Request) (interface{}, error) {
 		return BuiltinRole{
 			GetClusterConfig: a.AuthServer.getCachedClusterConfig,
 			Role:             *systemRole,
+			Username:         identity.Username,
 		}, nil
 	}
 	log.WithFields(logrus.Fields{"user": identity.Username, "type": "local", "cluster": certClusterName}).Debug("Authenticated user.")
