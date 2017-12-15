@@ -43,6 +43,9 @@ import (
 
 var _ = fmt.Printf // for testing
 
+// DELETE IN: 2.6.0
+// Tunnel server is deprecated and will be deleted in 2.6.0 alongside
+// with HTTP over SSH tunnel
 type TunSuite struct {
 	bk backend.Backend
 

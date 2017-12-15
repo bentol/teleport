@@ -295,6 +295,8 @@ func (s *WebSuite) SetUpTest(c *C) {
 			AddrNetwork: "tcp",
 			Addr:        fmt.Sprintf("%v:0", s.domainName),
 		},
+		ClientTLS:             nil,
+		ClusterName:           s.domainName,
 		HostSigners:           []ssh.Signer{s.signer},
 		LocalAuthClient:       s.roleAuth,
 		LocalAccessPoint:      s.roleAuth,

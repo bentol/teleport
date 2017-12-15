@@ -85,6 +85,9 @@ func (s *AuthSuite) TestSessions(c *C) {
 	c.Assert(s.a.UpsertCertAuthority(
 		suite.NewTestCA(services.UserCA, "me.localhost")), IsNil)
 
+	c.Assert(s.a.UpsertCertAuthority(
+		suite.NewTestCA(services.HostCA, "me.localhost")), IsNil)
+
 	user := "user1"
 	pass := []byte("abc123")
 
@@ -114,6 +117,9 @@ func (s *AuthSuite) TestSessions(c *C) {
 func (s *AuthSuite) TestUserLock(c *C) {
 	c.Assert(s.a.UpsertCertAuthority(
 		suite.NewTestCA(services.UserCA, "me.localhost")), IsNil)
+
+	c.Assert(s.a.UpsertCertAuthority(
+		suite.NewTestCA(services.HostCA, "me.localhost")), IsNil)
 
 	user := "user1"
 	pass := []byte("abc123")
@@ -198,7 +204,7 @@ func (s *AuthSuite) TestTokensCRUD(c *C) {
 	// try to use after TTL:
 	s.a.clock = clockwork.NewFakeClockAt(time.Now().UTC().Add(time.Hour + 1))
 	_, err = s.a.RegisterUsingToken(multiUseToken, "late.bird", "node-name", teleport.RoleProxy)
-	c.Assert(err, ErrorMatches, `"node-name" \[late.bird\] can not join the cluster. Token has expired`)
+	c.Assert(err, ErrorMatches, `"node-name" \[late.bird\] can not join the cluster, token has expired`)
 
 	// expired token should be gone now
 	err = s.a.DeleteToken(multiUseToken)

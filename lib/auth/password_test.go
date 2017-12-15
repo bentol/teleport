@@ -191,6 +191,11 @@ func (s *PasswordSuite) prepareForPasswordChange(user string, pass []byte, secon
 		return req, err
 	}
 
+	err = s.a.UpsertCertAuthority(suite.NewTestCA(services.HostCA, "me.localhost"))
+	if err != nil {
+		return req, err
+	}
+
 	ap, err := services.NewAuthPreference(services.AuthPreferenceSpecV2{
 		Type:         teleport.Local,
 		SecondFactor: secondFactorType,

@@ -80,9 +80,9 @@ func (s *AuthInitSuite) TestReadIdentity(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	id, err := ReadIdentityFromKeyPair(priv, cert)
+	id, err := ReadSSHIdentityFromKeyPair(priv, cert)
 	c.Assert(err, IsNil)
-	c.Assert(id.AuthorityDomain, Equals, "example.com")
+	c.Assert(id.ClusterName, Equals, "example.com")
 	c.Assert(id.ID, DeepEquals, IdentityID{HostUUID: "id1.example.com", Role: teleport.RoleNode})
 	c.Assert(id.CertBytes, DeepEquals, cert)
 	c.Assert(id.KeyBytes, DeepEquals, priv)
@@ -113,7 +113,7 @@ func (s *AuthInitSuite) TestBadIdentity(c *C) {
 	c.Assert(err, IsNil)
 
 	// bad cert type
-	_, err = ReadIdentityFromKeyPair(priv, pub)
+	_, err = ReadSSHIdentityFromKeyPair(priv, pub)
 	c.Assert(trace.IsBadParameter(err), Equals, true, Commentf("%#v", err))
 
 	// missing authority domain
@@ -128,7 +128,7 @@ func (s *AuthInitSuite) TestBadIdentity(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	_, err = ReadIdentityFromKeyPair(priv, cert)
+	_, err = ReadSSHIdentityFromKeyPair(priv, cert)
 	c.Assert(trace.IsBadParameter(err), Equals, true, Commentf("%#v", err))
 
 	// missing host uuid
@@ -143,7 +143,7 @@ func (s *AuthInitSuite) TestBadIdentity(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	_, err = ReadIdentityFromKeyPair(priv, cert)
+	_, err = ReadSSHIdentityFromKeyPair(priv, cert)
 	c.Assert(trace.IsBadParameter(err), Equals, true, Commentf("%#v", err))
 
 	// unrecognized role
@@ -158,7 +158,7 @@ func (s *AuthInitSuite) TestBadIdentity(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	_, err = ReadIdentityFromKeyPair(priv, cert)
+	_, err = ReadSSHIdentityFromKeyPair(priv, cert)
 	c.Assert(trace.IsBadParameter(err), Equals, true, Commentf("%#v", err))
 }
 

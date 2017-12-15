@@ -456,6 +456,12 @@ func (s *Service) Disabled() bool {
 type Auth struct {
 	Service `yaml:",inline"`
 
+	// ProxyProtocol turns on support for HAProxy proxy protocol
+	// this is the option that has be turned on only by administrator,
+	// as only admin knows whether service is in front of trusted load balancer
+	// or not.
+	ProxyProtocol string `yaml:"proxy_protocol,omitempty"`
+
 	// ClusterName is the name of the CA who manages this cluster
 	ClusterName ClusterName `yaml:"cluster_name,omitempty"`
 
@@ -650,24 +656,12 @@ type CommandLabel struct {
 
 // Proxy is `proxy_service` section of the config file:
 type Proxy struct {
-	Service       `yaml:",inline"`
-	ProxyProtocol string `yaml:"proxy_protocol,omitempty"`
-	WebAddr       string `yaml:"web_listen_addr,omitempty"`
-	TunAddr       string `yaml:"tunnel_listen_addr,omitempty"`
-	KeyFile       string `yaml:"https_key_file,omitempty"`
-	CertFile      string `yaml:"https_cert_file,omitempty"`
-	PublicAddr    string `yaml:"public_addr,omitempty"`
-}
-
-func (p *Proxy) ProxyProtocolEnabled() (bool, error) {
-	switch p.ProxyProtocol {
-	case teleport.On:
-		return true, nil
-	case teleport.Off, "":
-		return false, nil
-	default:
-		return false, trace.BadParameter("bad parameter for 'proxy_protocol': %q, supported values are on or off", p.ProxyProtocol)
-	}
+	Service    `yaml:",inline"`
+	WebAddr    string `yaml:"web_listen_addr,omitempty"`
+	TunAddr    string `yaml:"tunnel_listen_addr,omitempty"`
+	KeyFile    string `yaml:"https_key_file,omitempty"`
+	CertFile   string `yaml:"https_cert_file,omitempty"`
+	PublicAddr string `yaml:"public_addr,omitempty"`
 }
 
 // ReverseTunnel is a SSH reverse tunnel maintained by one cluster's

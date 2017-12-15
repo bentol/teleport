@@ -361,11 +361,15 @@ func (s *AuthTunnel) onAPIConnection(sconn *ssh.ServerConn, sshChan ssh.Channel,
 			log.Error(err.Error())
 			return
 		}
-		user = BuiltinRole{
+		builtin := BuiltinRole{
 			GetClusterConfig: s.authServer.getCachedClusterConfig,
 			Role:             systemRole,
 			Username:         sconn.Permissions.Extensions[ExtHost],
 		}
+		if builtin.Username == "" {
+			builtin.Username = fmt.Sprintf("builtin-%v", systemRole)
+		}
+		user = builtin
 	} else if clusterName, ok := sconn.Permissions.Extensions[utils.CertTeleportUserCA]; ok {
 		// we got user signed by remote certificate authority
 		var remoteRoles []string

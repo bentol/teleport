@@ -194,9 +194,6 @@ type ProxyConfig struct {
 	// Enabled turns proxy role on or off for this process
 	Enabled bool
 
-	// EnableProxyProtocol enables proxy protocol support
-	EnableProxyProtocol bool
-
 	//DisableTLS is enabled if we don't want self signed certs
 	DisableTLS bool
 
@@ -234,6 +231,9 @@ type ProxyConfig struct {
 type AuthConfig struct {
 	// Enabled turns auth role on or off for this process
 	Enabled bool
+
+	// EnableProxyProtocol enables proxy protocol support
+	EnableProxyProtocol bool
 
 	// SSHAddr is the listening address of SSH tunnel to HTTP service
 	SSHAddr utils.NetAddr

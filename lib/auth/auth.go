@@ -37,6 +37,7 @@ import (
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/services/local"
+	"github.com/gravitational/teleport/lib/sshca"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 
@@ -47,25 +48,6 @@ import (
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/ssh"
 )
-
-// Authority implements minimal key-management facility for generating OpenSSH
-// compatible public/private key pairs and OpenSSH certificates
-type Authority interface {
-	// GenerateKeyPair generates new keypair
-	GenerateKeyPair(passphrase string) (privKey []byte, pubKey []byte, err error)
-
-	// GetNewKeyPairFromPool returns new keypair from pre-generated in memory pool
-	GetNewKeyPairFromPool() (privKey []byte, pubKey []byte, err error)
-
-	// GenerateHostCert takes the private key of the CA, public key of the new host,
-	// along with metadata (host ID, node name, cluster name, roles, and ttl) and generates
-	// a host certificate.
-	GenerateHostCert(certParams services.HostCertParams) ([]byte, error)
-
-	// GenerateUserCert generates user certificate, it takes pkey as a signing
-	// private key (user certificate authority)
-	GenerateUserCert(certParams services.UserCertParams) ([]byte, error)
-}
 
 // AuthServerOption allows setting options as functional arguments to AuthServer
 type AuthServerOption func(*AuthServer)
@@ -146,7 +128,7 @@ type AuthServer struct {
 	cachedClusterConfig   services.ClusterConfig
 	cachedClusterConfigMu sync.RWMutex
 
-	Authority
+	sshca.Authority
 
 	// AuthServiceName is a human-readable name of this CA. If several Auth services are running
 	// (managing multiple teleport clusters) this field is used to tell them apart in UIs

@@ -448,6 +448,9 @@ func (s *APISuite) TestSessions(c *C) {
 	c.Assert(s.a.UpsertCertAuthority(
 		suite.NewTestCA(services.UserCA, "localhost")), IsNil)
 
+	c.Assert(s.a.UpsertCertAuthority(
+		suite.NewTestCA(services.HostCA, "localhost")), IsNil)
+
 	createUserAndRole(s.clt, user, []string{user})
 
 	ws, err := s.clt.SignIn(user, pass)

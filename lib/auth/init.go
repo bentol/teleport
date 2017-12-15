@@ -34,6 +34,7 @@ import (
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/sshca"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 
@@ -53,7 +54,7 @@ type InitConfig struct {
 	Backend backend.Backend
 
 	// Authority is key generator that we use
-	Authority Authority
+	Authority sshca.Authority
 
 	// HostUUID is a UUID of this host
 	HostUUID string

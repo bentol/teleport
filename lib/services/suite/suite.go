@@ -18,7 +18,9 @@ package suite
 
 import (
 	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"sort"
 	"time"
@@ -28,6 +30,7 @@ import (
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/fixtures"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/tlsca"
 
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
@@ -39,26 +42,39 @@ import (
 
 // NewTestCA returns new test authority with a test key as a public and
 // signing key
-func NewTestCA(caType services.CertAuthType, domainName string) *services.CertAuthorityV2 {
+func NewTestCA(caType services.CertAuthType, clusterName string) *services.CertAuthorityV2 {
 	keyBytes := fixtures.PEMBytes["rsa"]
-	key, err := ssh.ParsePrivateKey(keyBytes)
+	rsaKey, err := ssh.ParseRawPrivateKey(keyBytes)
 	if err != nil {
 		panic(err)
 	}
-	pubKey := key.PublicKey()
+
+	signer, err := ssh.NewSignerFromKey(rsaKey)
+	if err != nil {
+		panic(err)
+	}
+
+	key, cert, err := tlsca.GenerateSelfSignedCAWithPrivateKey(rsaKey.(*rsa.PrivateKey), pkix.Name{
+		CommonName:   clusterName,
+		Organization: []string{clusterName},
+	}, nil, defaults.CATTL)
+	if err != nil {
+		panic(err)
+	}
 
 	return &services.CertAuthorityV2{
 		Kind:    services.KindCertAuthority,
 		Version: services.V2,
 		Metadata: services.Metadata{
-			Name:      domainName,
+			Name:      clusterName,
 			Namespace: defaults.Namespace,
 		},
 		Spec: services.CertAuthoritySpecV2{
 			Type:         caType,
-			ClusterName:  domainName,
-			CheckingKeys: [][]byte{ssh.MarshalAuthorizedKey(pubKey)},
+			ClusterName:  clusterName,
+			CheckingKeys: [][]byte{ssh.MarshalAuthorizedKey(signer.PublicKey())},
 			SigningKeys:  [][]byte{keyBytes},
+			TLSKeyPairs:  []services.TLSKeyPair{{Cert: cert, Key: key}},
 		},
 	}
 }

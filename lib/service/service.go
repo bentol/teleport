@@ -470,11 +470,11 @@ func (process *TeleportProcess) initAuthService(authority auth.Authority) error 
 		log.Debugf("Closing listener: %v.", listener.Addr())
 		listener.Close()
 	})
-	if cfg.Proxy.EnableProxyProtocol {
-		log.Infof("Starting Proxy with PROXY protocol support.")
+	if cfg.Auth.EnableProxyProtocol {
+		log.Infof("Starting Auth service with PROXY protocol support.")
 	}
 	mux, err := multiplexer.New(multiplexer.Config{
-		EnableProxyProtocol: cfg.Proxy.EnableProxyProtocol,
+		EnableProxyProtocol: cfg.Auth.EnableProxyProtocol,
 		Listener:            listener,
 	})
 	if err != nil {
