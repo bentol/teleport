@@ -73,19 +73,37 @@ func (s *AuthServer) AuthenticateUser(req AuthenticateUserRequest) error {
 		err := s.WithUserLock(req.Username, func() error {
 			return s.CheckPasswordWOToken(req.Username, req.Pass.Password)
 		})
-		return trace.Wrap(err)
+		if err != nil {
+			// provide obscure message on purpose, while logging the real
+			// error server side
+			log.Debugf("failed to authenticate: %v", err)
+			return trace.AccessDenied("invalid username or password")
+		}
+		return nil
 	case req.U2F != nil:
 		// authenticate using U2F - code checks challenge response
 		// signed by U2F device of the user
 		err := s.WithUserLock(req.Username, func() error {
 			return s.CheckU2FSignResponse(req.Username, &req.U2F.SignResponse)
 		})
-		return trace.Wrap(err)
+		if err != nil {
+			// provide obscure message on purpose, while logging the real
+			// error server side
+			log.Debugf("failed to authenticate: %v", err)
+			return trace.AccessDenied("invalid U2F response")
+		}
+		return nil
 	case req.OTP != nil:
 		err := s.WithUserLock(req.Username, func() error {
 			return s.CheckPassword(req.Username, req.OTP.Password, req.OTP.Token)
 		})
-		return trace.Wrap(err)
+		if err != nil {
+			// provide obscure message on purpose, while logging the real
+			// error server side
+			log.Debugf("failed to authenticate: %v", err)
+			return trace.AccessDenied("invalid username, password or second factor")
+		}
+		return nil
 	default:
 		return trace.AccessDenied("unsupported authentication method")
 	}

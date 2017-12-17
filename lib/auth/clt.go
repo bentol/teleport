@@ -657,6 +657,16 @@ func (c *Client) DeleteAllTunnelConnections() error {
 	return trace.Wrap(err)
 }
 
+// AddUserLoginAttempt logs user login attempt
+func (c *Client) AddUserLoginAttempt(user string, attempt services.LoginAttempt, ttl time.Duration) error {
+	panic("not implemented")
+}
+
+// GetUserLoginAttempts returns user login attempts
+func (c *Client) GetUserLoginAttempts(user string) ([]services.LoginAttempt, error) {
+	panic("not implemented")
+}
+
 // UpsertAuthServer is used by auth servers to report their presence
 // to other auth servers in form of hearbeat expiring after ttl period.
 func (c *Client) UpsertAuthServer(s services.Server) error {

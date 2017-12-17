@@ -24,7 +24,7 @@ import (
 	"github.com/gravitational/teleport"
 	authority "github.com/gravitational/teleport/lib/auth/testauthority"
 	"github.com/gravitational/teleport/lib/backend"
-	"github.com/gravitational/teleport/lib/backend/dir"
+	"github.com/gravitational/teleport/lib/backend/boltbk"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/limiter"
 	"github.com/gravitational/teleport/lib/services"
@@ -34,6 +34,7 @@ import (
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/gravitational/trace"
+	"github.com/jonboulle/clockwork"
 )
 
 // TestAuthServerConfig is auth server test config
@@ -81,7 +82,7 @@ func NewTestAuthServer(cfg TestAuthServerConfig) (*TestAuthServer, error) {
 		TestAuthServerConfig: cfg,
 	}
 	var err error
-	srv.Backend, err = dir.New(backend.Params{"path": cfg.Dir})
+	srv.Backend, err = boltbk.New(backend.Params{"path": cfg.Dir})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -105,6 +106,7 @@ func NewTestAuthServer(cfg TestAuthServerConfig) (*TestAuthServer, error) {
 		Authority: authority.New(),
 		Access:    access,
 		Identity:  identity,
+		AuditLog:  srv.AuditLog,
 	})
 
 	// set cluster config
@@ -127,6 +129,17 @@ func NewTestAuthServer(cfg TestAuthServerConfig) (*TestAuthServer, error) {
 		return nil, trace.Wrap(err)
 	}
 	err = srv.AuthServer.SetClusterName(clusterName)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	authPreference, err := services.NewAuthPreference(services.AuthPreferenceSpecV2{
+		Type:         teleport.Local,
+		SecondFactor: teleport.OFF,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	err = srv.AuthServer.SetAuthPreference(authPreference)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -153,7 +166,10 @@ func NewTestAuthServer(cfg TestAuthServerConfig) (*TestAuthServer, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-
+	srv.AuthServer.UpsertCertAuthority(suite.NewTestCA(services.UserCA, srv.ClusterName))
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	srv.Authorizer, err = NewAuthorizer(srv.AuthServer.Access, srv.AuthServer.Identity, srv.AuthServer.Trust)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -177,19 +193,42 @@ func (a *TestAuthServer) NewCertificate(identity TestIdentity) (*tls.Certificate
 		if identity.TTL == 0 {
 			identity.TTL = time.Hour
 		}
-		a.AuthServer.generateUserCert(certRequest{
-			user:  user,
-			roles: roles,
-			ttl:   identity.TTL,
+		priv, pub, err := a.AuthServer.GenerateKeyPair("")
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		certs, err := a.AuthServer.generateUserCert(certRequest{
+			publicKey: pub,
+			user:      user,
+			roles:     roles,
+			ttl:       identity.TTL,
 		})
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		cert, err := tls.X509KeyPair(certs.tls, priv)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return &cert, nil
 	case BuiltinRole:
 		keys, err := a.AuthServer.GenerateServerKeys(id.Username, id.Username, teleport.Roles{id.Role})
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
+		cert, err := tls.X509KeyPair(keys.TLSCert, keys.Key)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return &cert, nil
 	default:
 		return nil, trace.BadParameter("identity of unknown type is unsupported")
 	}
+}
+
+// Clock returns clock used by auth server
+func (a *TestAuthServer) Clock() clockwork.Clock {
+	return a.AuthServer.clock
 }
 
 // NewTestTLSServer returns new test TLS server
@@ -203,7 +242,7 @@ func (a *TestAuthServer) NewTestTLSServer() (*TestTLSServer, error) {
 
 	srv, err := NewTestTLSServer(TestTLSServerConfig{
 		APIConfig:  apiConfig,
-		AuthServer: a.AuthServer,
+		AuthServer: a,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -214,7 +253,7 @@ func (a *TestAuthServer) NewTestTLSServer() (*TestTLSServer, error) {
 // TestTLSServerConfig is a configuration for test TLS server
 type TestTLSServerConfig struct {
 	APIConfig  *APIConfig
-	AuthServer *AuthServer
+	AuthServer *TestAuthServer
 	Limiter    *limiter.LimiterConfig
 	Listener   net.Listener
 }
@@ -227,6 +266,11 @@ type TestTLSServer struct {
 	Identity *Identity
 	// TLSServer is configured TLS server
 	TLSServer *TLSServer
+}
+
+// Clock returns clock used by auth server
+func (t *TestTLSServer) Clock() clockwork.Clock {
+	return t.AuthServer.Clock()
 }
 
 // CheckAndSetDefaults checks and sets limiter defaults
@@ -257,7 +301,7 @@ func NewTestTLSServer(cfg TestTLSServerConfig) (*TestTLSServer, error) {
 	srv := &TestTLSServer{
 		TestTLSServerConfig: cfg,
 	}
-	srv.Identity, err = NewServerIdentity(srv.AuthServer, "test-tls-server", teleport.RoleAuth)
+	srv.Identity, err = NewServerIdentity(srv.AuthServer.AuthServer, "test-tls-server", teleport.RoleAuth)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -287,6 +331,49 @@ type TestIdentity struct {
 	TTL time.Duration
 }
 
+// TestUser returns TestIdentity for local user
+func TestUser(username string) TestIdentity {
+	return TestIdentity{
+		I: LocalUser{
+			Username: username,
+		},
+	}
+}
+
+// TestNop returns "Nop" - unauthenticated identity
+func TestNop() TestIdentity {
+	return TestIdentity{
+		I: nil,
+	}
+}
+
+// TestAdmin returns TestIdentity for admin user
+func TestAdmin() TestIdentity {
+	return TestIdentity{
+		I: BuiltinRole{
+			Role:     teleport.RoleAdmin,
+			Username: "test-admin",
+		},
+	}
+}
+
+// NewClientFromWebSession returns new authenticated client from web session
+func (t *TestTLSServer) NewClientFromWebSession(sess services.WebSession) (*Client, error) {
+	tlsConfig, err := t.Identity.TLSConfig()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	tlsCert, err := tls.X509KeyPair(sess.GetTLSCert(), sess.GetPriv())
+	if err != nil {
+		return nil, trace.Wrap(err, "failed to parse TLS cert and key")
+	}
+	tlsConfig.Certificates = []tls.Certificate{tlsCert}
+	addrs := []utils.NetAddr{{
+		AddrNetwork: t.Listener.Addr().Network(),
+		Addr:        t.Listener.Addr().String()}}
+	return NewTLSClient(addrs, tlsConfig)
+}
+
 // NewClient returns new client to the test server authenticated with identity
 func (t *TestTLSServer) NewClient(identity TestIdentity) (*Client, error) {
 	tlsConfig, err := t.Identity.TLSConfig()
@@ -296,35 +383,18 @@ func (t *TestTLSServer) NewClient(identity TestIdentity) (*Client, error) {
 	addrs := []utils.NetAddr{{
 		AddrNetwork: t.Listener.Addr().Network(),
 		Addr:        t.Listener.Addr().String()}}
-	// nop identity means that the client is not authenticated
-	if identity.I == nil {
-		tlsConfig.Certificates = nil
-		return NewTLSClient(addrs, tlsConfig)
+
+	if identity.I != nil {
+		cert, err := t.AuthServer.NewCertificate(identity)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{*cert}
+	} else {
+		// the client is not authenticated, which means that auth
+		// server should apply Nop builtin role
 	}
-	switch id := identity.I.(type) {
-	case LocalUser:
-		user, err := t.AuthServer.GetUser(id.Username)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		roles, err := services.FetchRoles(user.GetRoles(), t.AuthServer, user.GetTraits())
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		if identity.TTL == 0 {
-			identity.TTL = time.Hour
-		}
-		t.AuthServer.generateUserCert(certRequest{
-			user:  user,
-			roles: roles,
-			ttl:   identity.TTL,
-		})
-	case BuiltinRole:
-		keys, err := t.AuthServer.GenerateServerKeys(id.Username, id.Username, []teleport.Roles{id.Role})
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-	}
+	return NewTLSClient(addrs, tlsConfig)
 }
 
 // Addr returns address of this server
@@ -351,14 +421,70 @@ func (t *TestTLSServer) Close() error {
 	if t.Listener != nil {
 		t.Listener.Close()
 	}
+	if t.AuthServer.Backend != nil {
+		t.AuthServer.Backend.Close()
+	}
 	return err
 }
 
 // NewServerIdentity generates new server identity, used in tests
-func NewServerIdentity(authServer *AuthServer, hostID string, role teleport.Role) (*Identity, error) {
-	keys, err := authServer.GenerateServerKeys(hostID, hostID, teleport.Roles{teleport.RoleAuth})
+func NewServerIdentity(clt *AuthServer, hostID string, role teleport.Role) (*Identity, error) {
+	keys, err := clt.GenerateServerKeys(hostID, hostID, teleport.Roles{teleport.RoleAuth})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	return ReadIdentityFromKeyPair(keys.Key, keys.Cert, keys.TLSCert, keys.TLSCACerts[0])
+}
+
+// clt limits required interface to the necessary methods
+// used to pass different clients in tests
+type clt interface {
+	UpsertRole(services.Role, time.Duration) error
+	UpsertUser(services.User) error
+}
+
+// CreateUserAndRole creates user and role and assignes role to a user, used in tests
+func CreateUserAndRole(clt clt, username string, allowedLogins []string) (services.User, services.Role, error) {
+	user, err := services.NewUser(username)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	role := services.RoleForUser(user)
+	role.SetLogins(services.Allow, []string{user.GetName()})
+	err = clt.UpsertRole(role, backend.Forever)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	user.AddRole(role.GetName())
+	err = clt.UpsertUser(user)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	return user, role, nil
+}
+
+// CreateUserAndRoleWithoutRoles creates user and role, but does not assign user to a role, used in tests
+func CreateUserAndRoleWithoutRoles(clt clt, username string, allowedLogins []string) (services.User, services.Role, error) {
+	user, err := services.NewUser(username)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+
+	role := services.RoleForUser(user)
+	set := services.MakeRuleSet(role.GetRules(services.Allow))
+	delete(set, services.KindRole)
+	role.SetRules(services.Allow, set.Slice())
+	role.SetLogins(services.Allow, []string{user.GetName()})
+	err = clt.UpsertRole(role, backend.Forever)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+
+	user.AddRole(role.GetName())
+	err = clt.UpsertUser(user)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+
+	return user, role, nil
 }

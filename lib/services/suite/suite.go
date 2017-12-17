@@ -232,7 +232,8 @@ func newServer(kind, name, addr, namespace string) *services.ServerV2 {
 			Namespace: namespace,
 		},
 		Spec: services.ServerSpecV2{
-			Addr: addr,
+			Addr:       addr,
+			PublicAddr: addr,
 		},
 	}
 }
@@ -242,18 +243,18 @@ func (s *ServicesTestSuite) ServerCRUD(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 0)
 
-	srv := newServer(services.KindNode, "srv1", "localhost:2022", defaults.Namespace)
+	srv := newServer(services.KindNode, "srv1", "127.0.0.1:2022", defaults.Namespace)
 	c.Assert(s.PresenceS.UpsertNode(srv), IsNil)
 
 	out, err = s.PresenceS.GetNodes(srv.Metadata.Namespace)
 	c.Assert(err, IsNil)
-	c.Assert(out, DeepEquals, []services.Server{srv})
+	fixtures.DeepCompare(c, out, []services.Server{srv})
 
 	out, err = s.PresenceS.GetProxies()
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 0)
 
-	proxy := newServer(services.KindProxy, "proxy1", "localhost:2023", defaults.Namespace)
+	proxy := newServer(services.KindProxy, "proxy1", "127.0.0.1:2023", defaults.Namespace)
 	c.Assert(s.PresenceS.UpsertProxy(proxy), IsNil)
 
 	out, err = s.PresenceS.GetProxies()
@@ -264,7 +265,7 @@ func (s *ServicesTestSuite) ServerCRUD(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 0)
 
-	auth := newServer(services.KindAuthServer, "auth1", "localhost:2025", defaults.Namespace)
+	auth := newServer(services.KindAuthServer, "auth1", "127.0.0.1:2025", defaults.Namespace)
 	c.Assert(s.PresenceS.UpsertAuthServer(auth), IsNil)
 
 	out, err = s.PresenceS.GetAuthServers()
@@ -297,7 +298,7 @@ func (s *ServicesTestSuite) ReverseTunnelsCRUD(c *C) {
 
 	out, err = s.PresenceS.GetReverseTunnels()
 	c.Assert(err, IsNil)
-	c.Assert(out, DeepEquals, []services.ReverseTunnel{tunnel})
+	fixtures.DeepCompare(c, out, []services.ReverseTunnel{tunnel})
 
 	err = s.PresenceS.DeleteReverseTunnel(tunnel.Spec.ClusterName)
 	c.Assert(err, IsNil)

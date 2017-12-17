@@ -369,7 +369,9 @@ func (s *APIServer) upsertReverseTunnel(auth ClientI, w http.ResponseWriter, r *
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	tun.SetTTL(s, req.TTL)
+	if req.TTL != 0 {
+		tun.SetTTL(s, req.TTL)
+	}
 	if err := auth.UpsertReverseTunnel(tun); err != nil {
 		return nil, trace.Wrap(err)
 	}

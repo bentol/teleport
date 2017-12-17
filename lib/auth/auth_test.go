@@ -94,7 +94,8 @@ func (s *AuthSuite) TestSessions(c *C) {
 	ws, err := s.a.SignIn(user, pass)
 	c.Assert(err, NotNil)
 
-	createUserAndRole(s.a, user, []string{user})
+	_, _, err = CreateUserAndRole(s.a, user, []string{user})
+	c.Assert(err, IsNil)
 
 	err = s.a.UpsertPassword(user, pass)
 	c.Assert(err, IsNil)
@@ -127,7 +128,8 @@ func (s *AuthSuite) TestUserLock(c *C) {
 	ws, err := s.a.SignIn(user, pass)
 	c.Assert(err, NotNil)
 
-	createUserAndRole(s.a, user, []string{user})
+	_, _, err = CreateUserAndRole(s.a, user, []string{user})
+	c.Assert(err, IsNil)
 
 	err = s.a.UpsertPassword(user, pass)
 	c.Assert(err, IsNil)
