@@ -28,12 +28,12 @@ import (
 	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
+	"github.com/gravitational/teleport/lib/fixtures"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/services/suite"
 	"github.com/gravitational/teleport/lib/session"
 	"github.com/gravitational/teleport/lib/utils"
 
-	"github.com/gravitational/trace"
 	"github.com/pquerna/otp/totp"
 	"gopkg.in/check.v1"
 )
@@ -73,7 +73,7 @@ func (s *TLSSuite) TestRBAC(c *check.C) {
 
 	// But can not get users
 	_, err = client.GetUsers()
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T"))
+	fixtures.ExpectAccessDenied(c, err)
 
 }
 
@@ -100,7 +100,7 @@ func (s *TLSSuite) TestReadOwnRole(c *check.C) {
 	c.Assert(err, check.IsNil)
 
 	_, err = userClient2.GetRole(userRole.GetName())
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T"))
+	fixtures.ExpectAccessDenied(c, err)
 }
 
 func (s *TLSSuite) TestTunnelConnectionsCRUD(c *check.C) {
@@ -162,7 +162,7 @@ func (s *TLSSuite) TestPasswordGarbage(c *check.C) {
 	}
 	for _, g := range garbage {
 		err := clt.CheckPassword("user1", g, "123456")
-		c.Assert(trace.IsBadParameter(err), check.Equals, true, check.Commentf("expected BadParameter, got %T %v", err, err))
+		fixtures.ExpectBadParameter(c, err)
 	}
 }
 
@@ -180,7 +180,7 @@ func (s *TLSSuite) TestPasswordCRUD(c *check.C) {
 	err = clt.UpsertPassword("user1", pass)
 	c.Assert(err, check.IsNil)
 
-	err = s.server.AuthServer.AuthServer.UpsertTOTP("user1", otpSecret)
+	err = s.server.Auth().UpsertTOTP("user1", otpSecret)
 	c.Assert(err, check.IsNil)
 
 	validToken, err := totp.GenerateCode(otpSecret, s.server.Clock().Now())
@@ -282,11 +282,11 @@ func (s *TLSSuite) TestOTPCRUD(c *check.C) {
 	// upsert a password and totp secret
 	err = clt.UpsertPassword("user1", pass)
 	c.Assert(err, check.IsNil)
-	err = s.server.AuthServer.AuthServer.UpsertTOTP(user, otpSecret)
+	err = s.server.Auth().UpsertTOTP(user, otpSecret)
 	c.Assert(err, check.IsNil)
 
 	// make sure the otp url we get back is valid url issued to the correct user
-	otpURL, _, err := s.server.AuthServer.AuthServer.GetOTPData(user)
+	otpURL, _, err := s.server.Auth().GetOTPData(user)
 	c.Assert(err, check.IsNil)
 	u, err := url.Parse(otpURL)
 	c.Assert(err, check.IsNil)
@@ -326,7 +326,7 @@ func (s *TLSSuite) TestSyncCachedClusterConfig(c *check.C) {
 	clusterConfig, err := services.NewClusterConfig(services.ClusterConfigSpecV3{
 		SessionRecording: services.RecordAtNode,
 	})
-	authServer := s.server.AuthServer.AuthServer
+	authServer := s.server.Auth()
 	err = authServer.SetClusterConfig(clusterConfig)
 	c.Assert(err, check.IsNil)
 
@@ -348,7 +348,9 @@ func (s *TLSSuite) TestSyncCachedClusterConfig(c *check.C) {
 	c.Assert(clusterConfig.GetSessionRecording(), check.Equals, services.RecordAtProxy)
 }
 
-// TestWebSessions tests web sessions flow
+// TestWebSessions tests web sessions flow for web user,
+// that logs in, extends web session and tries to perform administratvie action
+// but fails
 func (s *TLSSuite) TestWebSessions(c *check.C) {
 	clt, err := s.server.NewClient(TestAdmin())
 	c.Assert(err, check.IsNil)
@@ -359,7 +361,7 @@ func (s *TLSSuite) TestWebSessions(c *check.C) {
 	_, _, err = CreateUserAndRole(clt, user, []string{user})
 	c.Assert(err, check.IsNil)
 
-	proxy, err := s.server.NewClient(TestIdentity{I: BuiltinRole{Role: teleport.RoleProxy, Username: string(teleport.RoleProxy)}})
+	proxy, err := s.server.NewClient(TestBuiltin(teleport.RoleProxy))
 	c.Assert(err, check.IsNil)
 
 	req := AuthenticateUserRequest{
@@ -370,7 +372,7 @@ func (s *TLSSuite) TestWebSessions(c *check.C) {
 	}
 	// authentication attempt fails with no password set up
 	_, err = proxy.AuthenticateWebUser(req)
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T %#v", err, err))
+	fixtures.ExpectAccessDenied(c, err)
 
 	err = clt.UpsertPassword(user, pass)
 
@@ -389,6 +391,10 @@ func (s *TLSSuite) TestWebSessions(c *check.C) {
 	c.Assert(err, check.IsNil)
 	c.Assert(new, check.NotNil)
 
+	// Requesting forbidden action for user fails
+	err = web.DeleteUser(user)
+	fixtures.ExpectAccessDenied(c, err)
+
 	err = clt.DeleteWebSession(user, ws.GetName())
 	c.Assert(err, check.IsNil)
 
@@ -402,7 +408,7 @@ func (s *TLSSuite) TestWebSessions(c *check.C) {
 // TestGenerateCerts tests edge cases around authorization of
 // certificate generation for servers and users
 func (s *TLSSuite) TestGenerateCerts(c *check.C) {
-	priv, pub, err := s.server.AuthServer.AuthServer.GenerateKeyPair("")
+	priv, pub, err := s.server.Auth().GenerateKeyPair("")
 	c.Assert(err, check.IsNil)
 
 	// make sure we can parse the private and public key
@@ -430,12 +436,12 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	// attempt to elevate privileges by getting admin role in the certificate
 	_, err = hostClient.GenerateServerKeys(
 		hostID, s.server.AuthServer.ClusterName, teleport.Roles{teleport.RoleAdmin})
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T"))
+	fixtures.ExpectAccessDenied(c, err)
 
 	// attempt to get certificate for different host id
 	_, err = hostClient.GenerateServerKeys(
 		"some-other-host-id", s.server.AuthServer.ClusterName, teleport.Roles{teleport.RoleNode})
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T"))
+	fixtures.ExpectAccessDenied(c, err)
 
 	user1, userRole, err := CreateUserAndRole(clt, "user1", []string{"user1"})
 	c.Assert(err, check.IsNil)
@@ -449,7 +455,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 
 	_, err = nopClient.GenerateUserCert(pub, user1.GetName(), time.Hour, teleport.CompatibilityNone)
 	c.Assert(err, check.NotNil)
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T"))
+	fixtures.ExpectAccessDenied(c, err)
 	c.Assert(err, check.ErrorMatches, ".*cannot request a certificate for user1")
 
 	// Users don't match
@@ -458,7 +464,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 
 	_, err = userClient2.GenerateUserCert(pub, user1.GetName(), time.Hour, teleport.CompatibilityNone)
 	c.Assert(err, check.NotNil)
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T"))
+	fixtures.ExpectAccessDenied(c, err)
 	c.Assert(err, check.ErrorMatches, ".*cannot request a certificate for user1")
 
 	// should not be able to generate cert for longer than duration
@@ -502,4 +508,231 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 
 	_, _, _, _, err = ssh.ParseAuthorizedKey(cert)
 	c.Assert(err, check.IsNil)
+}
+
+// TestClusterConfigContext checks that the cluster configuration gets passed
+// along in the context and permissions get updated accordingly.
+func (s *TLSSuite) TestClusterConfigContext(c *check.C) {
+	proxy, err := s.server.NewClient(TestBuiltin(teleport.RoleProxy))
+	c.Assert(err, check.IsNil)
+
+	_, pub, err := s.server.Auth().GenerateKeyPair("")
+	c.Assert(err, check.IsNil)
+
+	// try and generate a host cert, this should fail because we are recording
+	// at the nodes not at the proxy
+	_, err = proxy.GenerateHostCert(pub,
+		"a", "b", nil,
+		"localhost", teleport.Roles{teleport.RoleProxy}, 0)
+	fixtures.ExpectAccessDenied(c, err)
+
+	// update cluster config to record at the proxy
+	clusterConfig, err := services.NewClusterConfig(services.ClusterConfigSpecV3{
+		SessionRecording: services.RecordAtProxy,
+	})
+	c.Assert(err, check.IsNil)
+	err = s.server.Auth().SetClusterConfig(clusterConfig)
+	c.Assert(err, check.IsNil)
+
+	// force a sync so the cached value gets updated
+	err = s.server.Auth().syncCachedClusterConfig()
+	c.Assert(err, check.IsNil)
+
+	// try and generate a host cert, now the proxy should be able to generate a
+	// host cert because it's in recording mode.
+	_, err = proxy.GenerateHostCert(pub,
+		"a", "b", nil,
+		"localhost", teleport.Roles{teleport.RoleProxy}, 0)
+	c.Assert(err, check.IsNil)
+}
+
+// TestAuthenticateWebUserOTP tests web authentication flow for password + OTP
+func (s *TLSSuite) TestAuthenticateWebUserOTP(c *check.C) {
+	clt, err := s.server.NewClient(TestAdmin())
+	c.Assert(err, check.IsNil)
+
+	user := "ws-test"
+	pass := []byte("ws-abc123")
+	rawSecret := "def456"
+	otpSecret := base32.StdEncoding.EncodeToString([]byte(rawSecret))
+
+	_, _, err = CreateUserAndRole(clt, user, []string{user})
+	c.Assert(err, check.IsNil)
+
+	err = s.server.Auth().UpsertPassword(user, pass)
+	c.Assert(err, check.IsNil)
+
+	err = s.server.Auth().UpsertTOTP(user, otpSecret)
+	c.Assert(err, check.IsNil)
+
+	otpURL, _, err := s.server.Auth().GetOTPData(user)
+	c.Assert(err, check.IsNil)
+
+	// make sure label in url is correct
+	u, err := url.Parse(otpURL)
+	c.Assert(err, check.IsNil)
+	c.Assert(u.Path, check.Equals, "/ws-test")
+
+	// create a valid otp token
+	validToken, err := totp.GenerateCode(otpSecret, s.server.Clock().Now())
+	c.Assert(err, check.IsNil)
+
+	proxy, err := s.server.NewClient(TestBuiltin(teleport.RoleProxy))
+	c.Assert(err, check.IsNil)
+
+	authPreference, err := services.NewAuthPreference(services.AuthPreferenceSpecV2{
+		Type:         teleport.Local,
+		SecondFactor: teleport.OTP,
+	})
+	c.Assert(err, check.IsNil)
+	err = s.server.Auth().SetAuthPreference(authPreference)
+	c.Assert(err, check.IsNil)
+
+	// authentication attempt fails with wrong passwrod
+	_, err = proxy.AuthenticateWebUser(AuthenticateUserRequest{
+		Username: user,
+		OTP:      &OTPCreds{Password: []byte("wrong123"), Token: validToken},
+	})
+	fixtures.ExpectAccessDenied(c, err)
+
+	// authentication attempt fails with wrong otp
+	_, err = proxy.AuthenticateWebUser(AuthenticateUserRequest{
+		Username: user,
+		OTP:      &OTPCreds{Password: pass, Token: "wrong123"},
+	})
+	fixtures.ExpectAccessDenied(c, err)
+
+	// authentication attempt fails with password auth only
+	_, err = proxy.AuthenticateWebUser(AuthenticateUserRequest{
+		Username: user,
+		Pass: &PassCreds{
+			Password: pass,
+		},
+	})
+	fixtures.ExpectAccessDenied(c, err)
+
+	// authentication succeeds
+	ws, err := proxy.AuthenticateWebUser(AuthenticateUserRequest{
+		Username: user,
+		OTP:      &OTPCreds{Password: pass, Token: validToken},
+	})
+	c.Assert(err, check.IsNil)
+
+	userClient, err := s.server.NewClientFromWebSession(ws)
+	c.Assert(err, check.IsNil)
+
+	_, err = userClient.GetWebSessionInfo(user, ws.GetName())
+	c.Assert(err, check.IsNil)
+
+	err = clt.DeleteWebSession(user, ws.GetName())
+	c.Assert(err, check.IsNil)
+
+	_, err = userClient.GetWebSessionInfo(user, ws.GetName())
+	c.Assert(err, check.NotNil)
+}
+
+// TestTokenSignupFlow tests signup flow using invite token
+func (s *TLSSuite) TestTokenSignupFlow(c *check.C) {
+	authPreference, err := services.NewAuthPreference(services.AuthPreferenceSpecV2{
+		Type:         teleport.Local,
+		SecondFactor: teleport.OTP,
+	})
+	c.Assert(err, check.IsNil)
+	err = s.server.Auth().SetAuthPreference(authPreference)
+	c.Assert(err, check.IsNil)
+
+	user := "foobar"
+	mappings := []string{"admin", "db"}
+
+	token, err := s.server.Auth().CreateSignupToken(services.UserV1{Name: user, AllowedLogins: mappings}, 0)
+	c.Assert(err, check.IsNil)
+
+	proxy, err := s.server.NewClient(TestBuiltin(teleport.RoleProxy))
+	c.Assert(err, check.IsNil)
+
+	// invalid token
+	_, _, err = proxy.GetSignupTokenData("bad_token_data")
+	c.Assert(err, check.NotNil)
+
+	// valid token - success
+	_, _, err = proxy.GetSignupTokenData(token)
+	c.Assert(err, check.IsNil)
+
+	signupToken, err := s.server.Auth().GetSignupToken(token)
+	c.Assert(err, check.IsNil)
+
+	otpToken, err := totp.GenerateCode(signupToken.OTPKey, s.server.Clock().Now())
+	c.Assert(err, check.IsNil)
+
+	// valid token, but missing second factor
+	newPassword := "abc123"
+	_, err = proxy.CreateUserWithoutOTP(token, newPassword)
+	fixtures.ExpectAccessDenied(c, err)
+
+	// invalid signup token
+	_, err = proxy.CreateUserWithOTP("what_token?", newPassword, otpToken)
+	fixtures.ExpectAccessDenied(c, err)
+
+	// valid signup token, invalid otp token
+	_, err = proxy.CreateUserWithOTP(token, newPassword, "badotp")
+	fixtures.ExpectAccessDenied(c, err)
+
+	// success
+	ws, err := proxy.CreateUserWithOTP(token, newPassword, otpToken)
+	c.Assert(err, check.IsNil)
+
+	// attempt to reuse token fails
+	_, err = proxy.CreateUserWithOTP(token, newPassword, otpToken)
+	fixtures.ExpectAccessDenied(c, err)
+
+	// can login with web session credentials now
+	userClient, err := s.server.NewClientFromWebSession(ws)
+	c.Assert(err, check.IsNil)
+
+	_, err = userClient.GetWebSessionInfo(user, ws.GetName())
+	c.Assert(err, check.IsNil)
+}
+
+// TestLoginAttempts makes sure the login attempt counter is incremented and
+// reset correctly.
+func (s *TLSSuite) TestLoginAttempts(c *check.C) {
+	clt, err := s.server.NewClient(TestAdmin())
+	c.Assert(err, check.IsNil)
+
+	user := "user1"
+	pass := []byte("abc123")
+
+	_, _, err = CreateUserAndRole(clt, user, []string{user})
+	c.Assert(err, check.IsNil)
+
+	proxy, err := s.server.NewClient(TestBuiltin(teleport.RoleProxy))
+	c.Assert(err, check.IsNil)
+
+	err = clt.UpsertPassword(user, pass)
+	c.Assert(err, check.IsNil)
+
+	req := AuthenticateUserRequest{
+		Username: user,
+		Pass: &PassCreds{
+			Password: []byte("bad pass"),
+		},
+	}
+	// authentication attempt fails with bad password
+	_, err = proxy.AuthenticateWebUser(req)
+	fixtures.ExpectAccessDenied(c, err)
+
+	// creates first failed login attempt
+	loginAttempts, err := s.server.Auth().GetUserLoginAttempts(user)
+	c.Assert(err, check.IsNil)
+	c.Assert(loginAttempts, check.HasLen, 1)
+
+	// try second time with wrong pass
+	req.Pass.Password = pass
+	_, err = proxy.AuthenticateWebUser(req)
+	c.Assert(err, check.IsNil)
+
+	// clears all failed attempts after success
+	loginAttempts, err = s.server.Auth().GetUserLoginAttempts(user)
+	c.Assert(err, check.IsNil)
+	c.Assert(loginAttempts, check.HasLen, 0)
 }

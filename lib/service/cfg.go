@@ -32,6 +32,7 @@ import (
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/limiter"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/sshca"
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/ghodss/yaml"
@@ -74,7 +75,7 @@ type Config struct {
 	Auth AuthConfig
 
 	// Keygen points to a key generator implementation
-	Keygen auth.Authority
+	Keygen sshca.Authority
 
 	// Proxy is SSH proxy that manages incoming and outbound connections
 	// via multiple reverse tunnels

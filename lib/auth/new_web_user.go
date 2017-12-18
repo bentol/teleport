@@ -190,7 +190,8 @@ func (s *AuthServer) CreateSignupU2FRegisterRequest(token string) (u2fRegisterRe
 func (s *AuthServer) CreateUserWithOTP(token string, password string, otpToken string) (services.WebSession, error) {
 	tokenData, err := s.GetSignupToken(token)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		log.Debugf("failed to get signup token: %v", err)
+		return nil, trace.AccessDenied("expired or incorrect signup token")
 	}
 
 	err = s.UpsertTOTP(tokenData.User.Name, tokenData.OTPKey)
@@ -228,7 +229,8 @@ func (s *AuthServer) CreateUserWithoutOTP(token string, password string) (servic
 	}
 	tokenData, err := s.GetSignupToken(token)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		log.Warningf("failed to get signup token: %v", err)
+		return nil, trace.AccessDenied("expired or incorrect signup token")
 	}
 
 	err = s.UpsertPassword(tokenData.User.Name, []byte(password))
@@ -258,7 +260,8 @@ func (s *AuthServer) CreateUserWithU2FToken(token string, password string, respo
 
 	tokenData, err := s.GetSignupToken(token)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		log.Warningf("failed to get signup token: %v", err)
+		return nil, trace.AccessDenied("expired or incorrect signup token")
 	}
 
 	challenge, err := s.GetU2FRegisterChallenge(token)
@@ -330,7 +333,7 @@ func (a *AuthServer) createUserAndSession(stoken *services.SignupToken) (service
 		return nil, trace.Wrap(err)
 	}
 
-	return sess.WithoutSecrets(), nil
+	return sess, nil
 }
 
 func (a *AuthServer) DeleteUser(user string) error {

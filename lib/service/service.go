@@ -50,6 +50,7 @@ import (
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/session"
 	"github.com/gravitational/teleport/lib/srv/regular"
+	"github.com/gravitational/teleport/lib/sshca"
 	"github.com/gravitational/teleport/lib/state"
 	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/lib/web"
@@ -349,7 +350,7 @@ func (process *TeleportProcess) getLocalAuth() *auth.AuthServer {
 }
 
 // initAuthService can be called to initialize auth server service
-func (process *TeleportProcess) initAuthService(authority auth.Authority) error {
+func (process *TeleportProcess) initAuthService(authority sshca.Authority) error {
 	var (
 		askedToExit = false
 		err         error

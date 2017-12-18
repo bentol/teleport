@@ -1170,7 +1170,7 @@ func (s *APIServer) createUserWithToken(auth ClientI, w http.ResponseWriter, r *
 		webSession, err = auth.CreateUserWithOTP(req.Token, req.Password, req.OTPToken)
 	}
 	if err != nil {
-		log.Error(trace.DebugReport(err))
+		log.Warningf("failed to create user: %v", err.Error())
 		return nil, trace.Wrap(err)
 	}
 

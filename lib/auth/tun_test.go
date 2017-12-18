@@ -226,46 +226,6 @@ func (s *TunSuite) TestUnixServerClient(c *C) {
 	c.Assert(err, IsNil)
 }
 
-// TestClusterConfigContext checks that the cluster configuration gets passed
-// along in the context and permissions get updated accordingly.
-func (s *TunSuite) TestClusterConfigContext(c *C) {
-	_, hpub, err := s.a.GenerateKeyPair("")
-	c.Assert(err, IsNil)
-
-	// connect to the auth server with role proxy
-	authMethod := []ssh.AuthMethod{ssh.PublicKeys(s.signer)}
-	clt, err := NewTunClient("test",
-		[]utils.NetAddr{{AddrNetwork: "tcp", Addr: s.tsrv.Addr()}}, s.hostuuid+".localhost", authMethod)
-	c.Assert(err, IsNil)
-	defer clt.Close()
-
-	// try and generate a host cert, this should fail because we are recording
-	// at the nodes not at the proxy
-	_, err = clt.GenerateHostCert(hpub,
-		"a", "b", nil,
-		"localhost", teleport.Roles{teleport.RoleProxy}, 0)
-	c.Assert(err, NotNil)
-
-	// update cluster config to record at the proxy
-	clusterConfig, err := services.NewClusterConfig(services.ClusterConfigSpecV3{
-		SessionRecording: services.RecordAtProxy,
-	})
-	c.Assert(err, IsNil)
-	err = s.a.SetClusterConfig(clusterConfig)
-	c.Assert(err, IsNil)
-
-	// force a sync so the cached value gets updated
-	err = s.a.syncCachedClusterConfig()
-	c.Assert(err, IsNil)
-
-	// try and generate a host cert, now the proxy should be able to generate a
-	// host cert because it's in recording mode.
-	_, err = clt.GenerateHostCert(hpub,
-		"a", "b", nil,
-		"localhost", teleport.Roles{teleport.RoleProxy}, 0)
-	c.Assert(err, IsNil)
-}
-
 func (s *TunSuite) TestSessions(c *C) {
 	c.Assert(s.a.UpsertCertAuthority(
 		suite.NewTestCA(services.UserCA, "localhost")), IsNil)

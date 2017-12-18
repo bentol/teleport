@@ -258,6 +258,11 @@ type TestTLSServerConfig struct {
 	Listener   net.Listener
 }
 
+// Auth returns auth server used by this TLS server
+func (t *TestTLSServer) Auth() *AuthServer {
+	return t.AuthServer.AuthServer
+}
+
 // TestTLSServer is a test TLS server
 type TestTLSServer struct {
 	// TestTLSServerConfig is a configuration
@@ -349,10 +354,15 @@ func TestNop() TestIdentity {
 
 // TestAdmin returns TestIdentity for admin user
 func TestAdmin() TestIdentity {
+	return TestBuiltin(teleport.RoleAdmin)
+}
+
+// TestBuiltin returns TestIdentity for builtin user
+func TestBuiltin(role teleport.Role) TestIdentity {
 	return TestIdentity{
 		I: BuiltinRole{
-			Role:     teleport.RoleAdmin,
-			Username: "test-admin",
+			Role:     role,
+			Username: string(role),
 		},
 	}
 }
