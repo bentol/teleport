@@ -34,6 +34,9 @@ func GenerateSelfSignedCAWithPrivateKey(priv *rsa.PrivateKey, entity pkix.Name, 
 	if err != nil {
 		return nil, nil, trace.Wrap(err)
 	}
+	// this is important, otherwise go will accept certificate authorities
+	// signed by the same private key and having the same subject (happens in tests)
+	entity.SerialNumber = serialNumber.String()
 
 	template := x509.Certificate{
 		SerialNumber:          serialNumber,

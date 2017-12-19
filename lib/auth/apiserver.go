@@ -225,8 +225,13 @@ func (s *APIServer) withAuth(handler HandlerWithAuthFunc) httprouter.Handle {
 			// between connection failed and access denied
 			if trace.IsConnectionProblem(err) {
 				return nil, trace.ConnectionProblem(err, "[07] failed to connect to the database")
+			} else if trace.IsAccessDenied(err) {
+				// don't print stack trace, just log the warning
+				log.Warn(err)
+			} else {
+				log.Warn(trace.DebugReport(err))
 			}
-			log.Warn(trace.DebugReport(err))
+
 			return nil, trace.AccessDenied(accessDeniedMsg + "[00]")
 		}
 		auth := &AuthWithRoles{

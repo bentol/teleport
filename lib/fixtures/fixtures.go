@@ -11,17 +11,17 @@ import (
 
 // ExpectNotFound expects not found error
 func ExpectNotFound(c *check.C, err error) {
-	c.Assert(trace.IsNotFound(err), check.Equals, true, check.Commentf("expected NotFound, got %T %#v at", err, err, string(debug.Stack())))
+	c.Assert(trace.IsNotFound(err), check.Equals, true, check.Commentf("expected NotFound, got %T %#v at %v", err, err, string(debug.Stack())))
 }
 
 // ExpectBadParameter expects bad parameter error
 func ExpectBadParameter(c *check.C, err error) {
-	c.Assert(trace.IsBadParameter(err), check.Equals, true, check.Commentf("expected BadParameter, got %T %#v at", err, err, string(debug.Stack())))
+	c.Assert(trace.IsBadParameter(err), check.Equals, true, check.Commentf("expected BadParameter, got %T %#v at %v", err, err, string(debug.Stack())))
 }
 
 // ExpectAccessDenied expects error to be access denied
 func ExpectAccessDenied(c *check.C, err error) {
-	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T %#v at", err, err, string(debug.Stack())))
+	c.Assert(trace.IsAccessDenied(err), check.Equals, true, check.Commentf("expected AccessDenied, got %T %#v at %v", err, err, string(debug.Stack())))
 }
 
 // DeepCompare uses gocheck DeepEquals but provides nice diff if things are not equal

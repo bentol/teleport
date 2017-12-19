@@ -63,8 +63,87 @@ func (s *TLSSuite) TearDownTest(c *check.C) {
 	}
 }
 
-func (s *TLSSuite) TestRBAC(c *check.C) {
-	client, err := s.server.NewClient(TestIdentity{})
+// TestRemoteBuiltinRole tests remote builtin role
+// that gets mapped to remote proxy readonly role
+func (s *TLSSuite) TestRemoteBuiltinRole(c *check.C) {
+	remoteServer, err := NewTestAuthServer(TestAuthServerConfig{
+		Dir:         c.MkDir(),
+		ClusterName: "remote",
+	})
+	c.Assert(err, check.IsNil)
+
+	certPool, err := s.server.CertPool()
+	c.Assert(err, check.IsNil)
+
+	// without trust, proxy server will get rejected
+	// remote auth server will get rejected because it is not supported
+	remoteProxy, err := remoteServer.NewRemoteClient(
+		TestBuiltin(teleport.RoleProxy), s.server.Addr(), certPool)
+	c.Assert(err, check.IsNil)
+
+	_, err = remoteProxy.GetDomainName()
+	c.Assert(err, check.ErrorMatches, ".*bad certificate.*")
+
+	// after trust is established, things are good
+	err = s.server.AuthServer.Trust(remoteServer, nil)
+	_, err = remoteProxy.GetDomainName()
+	c.Assert(err, check.IsNil)
+
+	// remote auth server will get rejected even with established trust
+	remoteAuth, err := remoteServer.NewRemoteClient(
+		TestBuiltin(teleport.RoleAuth), s.server.Addr(), certPool)
+	c.Assert(err, check.IsNil)
+
+	_, err = remoteAuth.GetDomainName()
+	fixtures.ExpectAccessDenied(c, err)
+}
+
+// TestRemoteUser tests scenario when remote user connects to the local
+// auth server and some edge cases.
+func (s *TLSSuite) TestRemoteUser(c *check.C) {
+	remoteServer, err := NewTestAuthServer(TestAuthServerConfig{
+		Dir:         c.MkDir(),
+		ClusterName: "remote",
+	})
+	c.Assert(err, check.IsNil)
+
+	remoteUser, remoteRole, err := CreateUserAndRole(remoteServer.AuthServer, "remote-user", []string{"remote-role"})
+	c.Assert(err, check.IsNil)
+
+	certPool, err := s.server.CertPool()
+	c.Assert(err, check.IsNil)
+
+	remoteClient, err := remoteServer.NewRemoteClient(
+		TestUser(remoteUser.GetName()), s.server.Addr(), certPool)
+	c.Assert(err, check.IsNil)
+
+	// User is not authorized to perform any actions
+	// as local cluster does not trust the remote cluster yet
+	_, err = remoteClient.GetDomainName()
+	c.Assert(err, check.ErrorMatches, ".*bad certificate.*")
+
+	// Establish trust, the request will still fail, there is
+	// no role mapping set up
+	err = s.server.AuthServer.Trust(remoteServer, nil)
+	c.Assert(err, check.IsNil)
+	_, err = remoteClient.GetDomainName()
+	fixtures.ExpectAccessDenied(c, err)
+
+	// Establish trust and map remote role to local admin role
+	_, localRole, err := CreateUserAndRole(s.server.Auth(), "local-user", []string{"local-role"})
+	c.Assert(err, check.IsNil)
+
+	err = s.server.AuthServer.Trust(remoteServer, services.RoleMap{{Remote: remoteRole.GetName(), Local: []string{localRole.GetName()}}})
+	c.Assert(err, check.IsNil)
+
+	_, err = remoteClient.GetDomainName()
+	c.Assert(err, check.IsNil)
+}
+
+// TestNopUser tests user with no permissions except
+// the ones that require other authentication methods ("nop" user)
+func (s *TLSSuite) TestNopUser(c *check.C) {
+	client, err := s.server.NewClient(TestNop())
 	c.Assert(err, check.IsNil)
 
 	// Nop User can get cluster name
@@ -74,7 +153,6 @@ func (s *TLSSuite) TestRBAC(c *check.C) {
 	// But can not get users
 	_, err = client.GetUsers()
 	fixtures.ExpectAccessDenied(c, err)
-
 }
 
 // TestOwnRole tests that user can read roles assigned to them
@@ -89,7 +167,7 @@ func (s *TLSSuite) TestReadOwnRole(c *check.C) {
 	c.Assert(err, check.IsNil)
 
 	// user should be able to read their own roles
-	userClient, err := s.server.NewClient(TestIdentity{I: LocalUser{Username: user1.GetName()}})
+	userClient, err := s.server.NewClient(TestUser(user1.GetName()))
 	c.Assert(err, check.IsNil)
 
 	_, err = userClient.GetRole(userRole.GetName())

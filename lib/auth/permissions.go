@@ -123,7 +123,12 @@ func (a *authorizer) authorizeRemoteUser(u RemoteUser) (*AuthContext, error) {
 	}
 	roleNames, err := ca.CombinedMapping().Map(u.RemoteRoles)
 	if err != nil {
-		return nil, trace.AccessDenied("failed to map roles for remote user %v from cluster %v", u.Username, u.ClusterName)
+		return nil, trace.AccessDenied("failed to map roles for remote user %q from cluster %q", u.Username, u.ClusterName)
+	}
+	if len(roleNames) == 0 {
+		return nil, trace.AccessDenied("no roles mapped for remote user %q from cluster %q", u.Username, u.ClusterName)
+	} else {
+		log.Debugf("Mapped roles %v of remote user %q to local roles %v.", u.RemoteRoles, u.Username, roleNames)
 	}
 	checker, err := services.FetchRoles(roleNames, a.access, nil)
 	if err != nil {

@@ -18,6 +18,7 @@ package auth
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"net"
 	"time"
 
@@ -231,6 +232,34 @@ func (a *TestAuthServer) Clock() clockwork.Clock {
 	return a.AuthServer.clock
 }
 
+// Trust adds other server host certificate authority as trusted
+func (a *TestAuthServer) Trust(remote *TestAuthServer, roleMap services.RoleMap) error {
+	remoteCA, err := remote.AuthServer.GetCertAuthority(services.CertAuthID{
+		Type:       services.HostCA,
+		DomainName: remote.ClusterName,
+	}, false)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	err = a.AuthServer.UpsertCertAuthority(remoteCA)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	remoteCA, err = remote.AuthServer.GetCertAuthority(services.CertAuthID{
+		Type:       services.UserCA,
+		DomainName: remote.ClusterName,
+	}, false)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	remoteCA.SetRoleMap(roleMap)
+	err = a.AuthServer.UpsertCertAuthority(remoteCA)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	return nil
+}
+
 // NewTestTLSServer returns new test TLS server
 func (a *TestAuthServer) NewTestTLSServer() (*TestTLSServer, error) {
 	apiConfig := &APIConfig{
@@ -248,6 +277,22 @@ func (a *TestAuthServer) NewTestTLSServer() (*TestTLSServer, error) {
 		return nil, trace.Wrap(err)
 	}
 	return srv, nil
+}
+
+// NewRemoteClient creates new client to the remote server using identity
+// generated for this certificate authority
+func (a *TestAuthServer) NewRemoteClient(identity TestIdentity, addr net.Addr, pool *x509.CertPool) (*Client, error) {
+	tlsConfig := utils.TLSConfig()
+	cert, err := a.NewCertificate(identity)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	tlsConfig.Certificates = []tls.Certificate{*cert}
+	tlsConfig.RootCAs = pool
+	addrs := []utils.NetAddr{{
+		AddrNetwork: addr.Network(),
+		Addr:        addr.String()}}
+	return NewTLSClient(addrs, tlsConfig)
 }
 
 // TestTLSServerConfig is a configuration for test TLS server
@@ -384,6 +429,15 @@ func (t *TestTLSServer) NewClientFromWebSession(sess services.WebSession) (*Clie
 	return NewTLSClient(addrs, tlsConfig)
 }
 
+// CertPool returns cert pool that this auth server represents
+func (t *TestTLSServer) CertPool() (*x509.CertPool, error) {
+	tlsConfig, err := t.Identity.TLSConfig()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return tlsConfig.RootCAs, nil
+}
+
 // NewClient returns new client to the test server authenticated with identity
 func (t *TestTLSServer) NewClient(identity TestIdentity) (*Client, error) {
 	tlsConfig, err := t.Identity.TLSConfig()
@@ -408,8 +462,8 @@ func (t *TestTLSServer) NewClient(identity TestIdentity) (*Client, error) {
 }
 
 // Addr returns address of this server
-func (t *TestTLSServer) Addr() string {
-	return t.Listener.Addr().String()
+func (t *TestTLSServer) Addr() net.Addr {
+	return t.Listener.Addr()
 }
 
 // Start starts TLS server on loppback address on the first lisenting socket

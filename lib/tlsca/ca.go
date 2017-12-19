@@ -133,6 +133,7 @@ func (ca *CertAuthority) GenerateCertificate(req CertificateRequest) ([]byte, er
 		NotBefore:             req.Clock.Now().UTC().Add(-1 * time.Minute),
 		NotAfter:              req.NotAfter,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true, // no intermediate certs allowed
 		IsCA:     false,
 		DNSNames: req.DNSNames,

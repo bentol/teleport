@@ -66,6 +66,8 @@ func NewTLSServer(cfg TLSServerConfig) (*TLSServer, error) {
 	authMiddleware.Wrap(NewAPIServer(&cfg.APIConfig))
 	// Wrap sets the next middleware in chain to the authMiddleware
 	limiter.WrapHandle(authMiddleware)
+	// force client auth
+	cfg.TLS.ClientAuth = tls.RequireAndVerifyClientCert
 	server := &TLSServer{
 		TLSServerConfig: cfg,
 		Server: &http.Server{
@@ -87,7 +89,7 @@ func (t *TLSServer) Serve(listener net.Listener) error {
 func (t *TLSServer) GetConfigForClient(info *tls.ClientHelloInfo) (*tls.Config, error) {
 	// update client certificate pool based on currently trusted TLS
 	// certificate authorities.
-	// TODO(klizhentas) drop connectoins of the TLS cert authorities
+	// TODO(klizhentas) drop connections of the TLS cert authorities
 	// that are not trusted
 	// TODO(klizhentas) what are performance implications of returning new config
 	// per connections? E.g. what happens to session tickets. Benchmark this
@@ -115,13 +117,18 @@ func (a *AuthMiddleware) Wrap(h http.Handler) {
 
 func (a *AuthMiddleware) GetUser(r *http.Request) (interface{}, error) {
 	peers := r.TLS.PeerCertificates
+	if len(peers) > 1 {
+		// when turning intermediaries on, don't forget to verify
+		// https://github.com/kubernetes/kubernetes/pull/34524/files#diff-2b283dde198c92424df5355f39544aa4R59
+		return nil, trace.AccessDenied("access denied: intermediaries are not supported")
+	}
 	// with no client authentication in place, middleware
 	// assumes not-privileged Nop role.
 	// it theoretically possible to use bearer token auth even
 	// for connections without auth, but this is not active use-case
 	// therefore it is not allowed to reduce scope
 	if len(peers) == 0 {
-		log.WithFields(logrus.Fields{"type": "builtinb", "roles": teleport.RoleNop}).Debug("Authenticated user.")
+		log.WithFields(logrus.Fields{"type": "builtin", "roles": teleport.RoleNop}).Debug("Authenticated user.")
 		return BuiltinRole{
 			GetClusterConfig: a.AuthServer.getCachedClusterConfig,
 			Role:             teleport.RoleNop,
@@ -146,7 +153,11 @@ func (a *AuthMiddleware) GetUser(r *http.Request) (interface{}, error) {
 
 	// this block assumes interactive user from remote cluster
 	// based on the remote certificate authority cluster name encoded in
-	// x509 organization name
+	// x509 organization name. This is a safe check because:
+	// 1. Trust and verification is established during TLS handshake
+	// by creating a cert pool constructed of trusted certificate authorities
+	// 2. Remote CAs are not allowed to have the same cluster name
+	// as the local certificate authority
 	if certClusterName != localClusterName {
 		// make sure that this user does not have system role
 		// the local auth server can not truste remote servers
