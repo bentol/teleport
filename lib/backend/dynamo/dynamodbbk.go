@@ -42,6 +42,8 @@ import (
 type DynamoConfig struct {
 	// Region is where DynamoDB Table will be used to store k/v
 	Region string `json:"region,omitempty"`
+	// Endpoint if want to use dynamodb clone like dynalite
+	Endpoint string `json:"endpoint,omitempty"`
 	// AWS AccessKey used to authenticate DynamoDB queries (prefer IAM role instead of hardcoded value)
 	AccessKey string `json:"access_key,omitempty"`
 	// AWS SecretKey used to authenticate DynamoDB queries (prefer IAM role instead of hardcoded value)
@@ -52,6 +54,10 @@ type DynamoConfig struct {
 	ReadCapacityUnits int64 `json:"read_capacity_units"`
 	// WriteCapacityUnits is Dynamodb write capacity units
 	WriteCapacityUnits int64 `json:"write_capacity_units"`
+	// Disable ssl
+	DisableSSL bool `json:"disable_ssl"`
+	// Disable ttl, ttl in dynalite not supported
+	DisableTTL bool `json:"disable_ttl"`
 }
 
 // CheckAndSetDefaults is a helper returns an error if the supplied configuration
@@ -157,6 +163,12 @@ func New(params backend.Params) (backend.Backend, error) {
 	if cfg.Region != "" {
 		sess.Config.Region = aws.String(cfg.Region)
 	}
+	if cfg.Endpoint != "" {
+		sess.Config.Endpoint = aws.String(cfg.Endpoint)
+	}
+	if cfg.DisableSSL == true {
+		sess.Config.DisableSSL = aws.Bool(cfg.DisableSSL)
+	}
 	if cfg.AccessKey != "" || cfg.SecretKey != "" {
 		creds := credentials.NewStaticCredentials(cfg.AccessKey, cfg.SecretKey, "")
 		sess.Config.Credentials = creds
@@ -181,10 +193,14 @@ func New(params backend.Params) (backend.Backend, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	err = b.turnOnTimeToLive()
-	if err != nil {
-		return nil, trace.Wrap(err)
+
+	if cfg.DisableTTL != true {
+		err = b.turnOnTimeToLive()
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
 	}
+
 	return b, nil
 }
 
