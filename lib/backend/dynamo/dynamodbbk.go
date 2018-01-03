@@ -47,6 +47,10 @@ type DynamoConfig struct {
 	SecretKey string `json:"secret_key,omitempty"`
 	// Tablename where to store K/V in DynamoDB
 	Tablename string `json:"table_name,omitempty"`
+	// Endpoint if want to use dynamodb clone like dynalite
+	Endpoint string `json:"endpoint,omitempty"`
+	// Disable ssl
+	DisableSSL bool `json:"disable_ssl"`
 }
 
 // DynamoDBBackend struct
@@ -131,6 +135,12 @@ func New(params backend.Params) (backend.Backend, error) {
 	if cfg.AccessKey != "" || cfg.SecretKey != "" {
 		creds := credentials.NewStaticCredentials(cfg.AccessKey, cfg.SecretKey, "")
 		sess.Config.Credentials = creds
+	}
+	if cfg.Endpoint != "" {
+		sess.Config.Endpoint = aws.String(cfg.Endpoint)
+	}
+	if cfg.DisableSSL == true {
+		sess.Config.DisableSSL = aws.Bool(cfg.DisableSSL)
 	}
 
 	// create DynamoDB service:
