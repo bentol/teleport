@@ -1125,9 +1125,46 @@ func (h *Handler) siteNodesGet(w http.ResponseWriter, r *http.Request, p httprou
 	if !services.IsValidNamespace(namespace) {
 		return nil, trace.BadParameter("invalid namespace %q", namespace)
 	}
-	servers, err := clt.GetNodes(namespace)
+
+	allServers, err := clt.GetNodes(namespace)
 	if err != nil {
 		return nil, trace.Wrap(err)
+	}
+
+	// filter based on user's role
+	servers := make([]services.Server, 0)
+	for _, server := range allServers {
+		isOk := false
+
+		// iterate roles
+		for _, roleObj := range c.userRoles {
+			roleNodeConditions := roleObj.GetNodeLabels(services.Allow)
+			if len(roleNodeConditions) == 0 {
+				continue
+			}
+
+			isOk = true
+
+			for k, v := range roleNodeConditions {
+				// wildcard, match all
+				if (k == "*") && (v == "*") {
+					isOk = true
+					break
+				}
+
+				if labelValue, exist := server.GetAllLabels()[k]; exist {
+					isOk = isOk && exist && (v == labelValue)
+				}
+			}
+
+			if isOk {
+				break
+			}
+		}
+
+		if isOk {
+			servers = append(servers, server)
+		}
 	}
 
 	uiServers := ui.MakeServers(site.GetName(), servers)
