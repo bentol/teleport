@@ -18,8 +18,11 @@ package local
 
 import (
 	"encoding/json"
+	"math/rand"
 	"sort"
+	"strings"
 
+	"github.com/gravitational/teleport/cache"
 	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/services"
 
@@ -159,19 +162,31 @@ func (s *PresenceService) GetNodes(namespace string) ([]services.Server, error) 
 	if namespace == "" {
 		return nil, trace.BadParameter("missing namespace value")
 	}
+
 	keys, err := s.GetKeys([]string{namespacesPrefix, namespace, nodesPrefix})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	servers := make([]services.Server, 0, len(keys))
 	for _, key := range keys {
-		data, err := s.GetVal([]string{namespacesPrefix, namespace, nodesPrefix}, key)
-		if err != nil {
-			if trace.IsNotFound(err) {
-				continue
+		// check cache first
+		cacheKey := strings.Join([]string{namespacesPrefix, namespace, nodesPrefix, key}, ".")
+		data, err := cache.Get(cacheKey)
+
+		if len(data) == 0 {
+			data, err = s.GetVal([]string{namespacesPrefix, namespace, nodesPrefix}, key)
+			if err != nil {
+				if trace.IsNotFound(err) {
+					continue
+				}
+				return nil, trace.Wrap(err)
+			} else {
+				// if got data, keep in cache
+				expire := 60 + rand.Intn(60)
+				cache.Set(cacheKey, data, expire)
 			}
-			return nil, trace.Wrap(err)
 		}
+
 		server, err := services.GetServerMarshaler().UnmarshalServer(data, services.KindNode)
 		if err != nil {
 			return nil, trace.Wrap(err)
