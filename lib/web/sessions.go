@@ -57,6 +57,7 @@ type SessionContext struct {
 	remoteClt map[string]auth.ClientI
 	parent    *sessionCache
 	closers   []io.Closer
+	userRoles []services.Role
 }
 
 // getTerminal finds and returns an active web terminal for a given session:
@@ -663,12 +664,20 @@ func (s *sessionCache) ValidateSession(user, sid string) (*SessionContext, error
 		return nil, trace.Wrap(err)
 	}
 
+	userRoles := make([]services.Role, 0)
+	userObj, _ := userClient.GetUser(user)
+	for _, role := range userObj.GetRoles() {
+		roleObj, _ := userClient.GetRole(role)
+		userRoles = append(userRoles, roleObj)
+	}
+
 	c := &SessionContext{
 		clt:       userClient,
 		remoteClt: make(map[string]auth.ClientI),
 		user:      user,
 		sess:      sess,
 		parent:    s,
+		userRoles: userRoles,
 	}
 	c.Entry = log.WithFields(log.Fields{
 		"user": user,
